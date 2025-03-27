@@ -5,8 +5,9 @@ from supabase import create_client
 from streamlit import cache_data
 
 # Configuração do Supabase
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+SUPABASE_URL = 'https://lwklfogmduwitmbqbgyp.supabase.co'
+SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3a2xmb2dtZHV3aXRtYnFiZ3lwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg1MjIyNDQsImV4cCI6MjA1NDA5ODI0NH0.3RMzkQnRcnZj2XtK3YZm4z4VHpLlwe3N8ulOiqcbC-I'
+
 # Criando cliente Supabase
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 

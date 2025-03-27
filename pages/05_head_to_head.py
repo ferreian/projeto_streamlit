@@ -227,9 +227,15 @@ if "merged_dataframes" in st.session_state:
                                 "Local": local
                             })
 
-                st.session_state["df_resultado_h2h"] = pd.DataFrame(resultados_h2h)
+                
+                # Atualiza o session_state com Label
+                df_resultado_h2h = pd.DataFrame(resultados_h2h)
+                st.session_state["df_resultado_h2h"] = df_resultado_h2h
                 st.success("✅ Análise concluída!")
 
+
+
+                
             # 👉 Mostra o resultado se já tiver sido calculado
             if "df_resultado_h2h" in st.session_state:
                 df_resultado_h2h = st.session_state["df_resultado_h2h"]
@@ -264,7 +270,7 @@ if "merged_dataframes" in st.session_state:
                 
                 
 
-                # 🎯 Métricas, Cartões e Gráficos
+                # 🎯 Métricas, Cartões e Gráficos 
                 if head_select and check_select and head_select != check_select:
                     df_selecionado = df_resultado_h2h[
                         (df_resultado_h2h["Head"] == head_select) &
@@ -377,7 +383,138 @@ if "merged_dataframes" in st.session_state:
                         bargap=0.25
                     )
 
-                    st.plotly_chart(fig_bar, use_container_width=True)           
+                    st.plotly_chart(fig_bar, use_container_width=True)
+
+                    from st_aggrid import AgGrid, GridOptionsBuilder
+
+                    # 📋 Tabela de Comparação com Múltiplos Checks +
+                    st.markdown("### 📋 Comparação do Head com Múltiplos Checks")
+
+                    # Seleciona um único Head
+                    head_unico = st.selectbox("Selecione o Cultivar Head (referência)", options=cultivares_unicos, key="multi_head")
+
+                    # Lista de Checks (exclui o Head selecionado)
+                    opcoes_checks = [c for c in cultivares_unicos if c != head_unico]
+                    checks_selecionados = st.multiselect("Selecione os Cultivares Check para comparação", options=opcoes_checks, key="multi_checks")
+
+                    if head_unico and checks_selecionados:
+                        df_multi = df_resultado_h2h[
+                            (df_resultado_h2h["Head"] == head_unico) &
+                            (df_resultado_h2h["Check"].isin(checks_selecionados))
+                        ]
+
+                        if not df_multi.empty:
+                            resumo = df_multi.groupby("Check").agg({
+                                "Number_of_Win": "sum",
+                                "Number_of_Comparison": "sum",
+                                "Difference": "mean"
+                            }).reset_index()
+
+                            resumo.rename(columns={
+                                "Check": "Cultivar Check",
+                                "Number_of_Win": "Vitórias",
+                                "Number_of_Comparison": "Num_Locais",
+                                "Difference": "Diferença Média"
+                            }, inplace=True)
+
+                            resumo["% Vitórias"] = (resumo["Vitórias"] / resumo["Num_Locais"] * 100).round(1)
+                            resumo["Diferença Média"] = resumo["Diferença Média"].round(1)
+
+                            resumo = resumo[["Cultivar Check", "% Vitórias", "Num_Locais", "Diferença Média"]]
+
+
+                            # AgGrid estilizado
+                            gb = GridOptionsBuilder.from_dataframe(resumo)
+                            gb.configure_default_column(cellStyle={'fontSize': '14px'})
+                            gb.configure_grid_options(headerHeight=30)
+                            custom_css = {
+                                ".ag-header-cell-label": {
+                                    "font-weight": "bold",
+                                    "font-size": "15px",
+                                    "color": "black"
+                                }
+                            }
+
+                            AgGrid(
+                                resumo,
+                                gridOptions=gb.build(),
+                                height=400,
+                                custom_css=custom_css
+                            )
+                        else:
+                            st.info("❕ Nenhuma comparação disponível com os Checks selecionados.")
+
+                        # 🔽 Exportação para Excel
+                        buffer = io.BytesIO()
+                        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+                            resumo.to_excel(writer, sheet_name="comparacao_multi_check", index=False)
+
+                        st.download_button(
+                            label="📥 Baixar Comparação (Excel)",
+                            data=buffer.getvalue(),
+                            file_name=f"comparacao_{head_unico}_vs_checks.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+                    # 📊 Gráfico de Barras mostrando a diferença do Head e vários checks
+                    # Calcula a diferença média (opcional, baseado na % Vitórias)
+                    resumo["Diferença Média"] = (resumo["% Vitórias"] - 50).round(1)
+
+                    # 🎯 Título estilizado para o gráfico
+                    
+
+                    # 📈 Gráfico de barras - Diferença Média
+                    fig_diff = go.Figure()
+
+                    fig_diff.add_trace(go.Bar(
+                        y=resumo["Cultivar Check"],
+                        x=resumo["Diferença Média"],
+                        orientation='h',
+                        text=resumo["Diferença Média"].round(1),
+                        textposition="outside",
+                        textfont=dict(size=16, family="Arial Black", color="black"),
+                        marker_color=resumo["Diferença Média"].apply(lambda x: "green" if x > 0 else "crimson")
+                    ))
+
+                    fig_diff.update_layout(
+                    title=dict(
+                        text="📊 Diferença Média de Produtividade entre Cultivares",
+                        font=dict(size=22, family="Arial Black", color="black")
+                    ),
+                    xaxis=dict(
+                        title=dict(
+                            text="Diferença Média (sc/ha)",
+                            font=dict(size=18, family="Arial Black", color="black")
+                        ),
+                        tickfont=dict(size=16, family="Arial Black", color="black")
+                    ),
+                    yaxis=dict(
+                        title=dict(
+                            text="Cultivar Check",
+                            font=dict(size=18, family="Arial Black", color="black")
+                        ),
+                        tickfont=dict(size=16, family="Arial Black", color="black")
+                    ),
+                    margin=dict(t=60, b=60, l=60, r=40),
+                    height=500,
+                    showlegend=False
+                )
+
+
+
+                    st.plotly_chart(fig_diff, use_container_width=True)
+
+
+
+
+
+
+
+
+
+                
+
+
+
 
             
     else:
