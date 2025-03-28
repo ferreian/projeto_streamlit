@@ -80,6 +80,7 @@ if "merged_dataframes" in st.session_state:
             "fazendaRef": "FazendaRef",
             "ChaveFaixa": "ChaveFaixa"
         }
+
         df_final_av7 = df_final_av7[colunas_selecionadas].rename(columns=colunas_renomeadas)
 
         # Normaliza nomes das colunas para facilitar filtros
@@ -89,15 +90,24 @@ if "merged_dataframes" in st.session_state:
         df_final_av7["Produtor"] = df_final_av7["Produtor"].astype(str).str.upper()
         df_final_av7["Fazenda"] = df_final_av7["Fazenda"].astype(str).str.upper()
 
-        df_final_av7["Cultivar"] = df_final_av7["Cultivar"].replace({
+        # Corrige nomes corrompidos de cultivares
+        substituicoes_cultivares = {
             "B�NUS IPRO": "BÔNUS IPRO",
             "DOM�NIO IPRO": "DOMÍNIO IPRO",
             "F�RIA CE": "FÚRIA CE",
             "V�NUS CE": "VÊNUS CE",
             "GH 2383 IPRO": "GH 2483 IPRO"
-        })
+        }
 
-        st.session_state["df_final_av7"] = df_final_av7
+        if "Cultivar" in df_final_av7.columns:
+            df_final_av7["Cultivar"] = df_final_av7["Cultivar"].replace(substituicoes_cultivares)
+
+
+        # Remove duplicadas para evitar repetição em análises futuras
+        df_final_av7.drop_duplicates(inplace=True)
+
+        st.session_state["df_final_av7"] = df_final_av7     
+
 
         # Filtros visuais
         col_filtros, col_tabela = st.columns([1.5, 8.5])
@@ -239,7 +249,35 @@ if "merged_dataframes" in st.session_state:
             # 👉 Mostra o resultado se já tiver sido calculado
             if "df_resultado_h2h" in st.session_state:
                 df_resultado_h2h = st.session_state["df_resultado_h2h"]
-                st.dataframe(df_resultado_h2h, use_container_width=True)
+                # 📋 Tabela formatada com AgGrid - Head to Head
+                from st_aggrid import GridOptionsBuilder, AgGrid
+
+                df_h2h_fmt = df_resultado_h2h.copy()
+
+                gb = GridOptionsBuilder.from_dataframe(df_h2h_fmt)
+                colunas_float = df_h2h_fmt.select_dtypes(include=["float"]).columns
+
+                for col in colunas_float:
+                    gb.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
+
+                gb.configure_default_column(cellStyle={'fontSize': '14px'})
+                gb.configure_grid_options(headerHeight=30)
+
+                custom_css = {
+                    ".ag-header-cell-label": {
+                        "font-weight": "bold",
+                        "font-size": "15px",
+                        "color": "black"
+                    }
+                }
+
+                AgGrid(
+                    df_h2h_fmt,
+                    gridOptions=gb.build(),
+                    height=600,
+                    custom_css=custom_css
+                )
+
 
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
@@ -267,10 +305,8 @@ if "merged_dataframes" in st.session_state:
 
                 with col3:
                     check_select = st.selectbox("Selecionar Cultivar Check", options=cultivares_unicos, key="check_select")
-                
-                
 
-                # 🎯 Métricas, Cartões e Gráficos 
+                # 🎯 Métricas, Cartões e Gráficos - Comparação 1x1
                 if head_select and check_select and head_select != check_select:
                     df_selecionado = df_resultado_h2h[
                         (df_resultado_h2h["Head"] == head_select) &
@@ -286,7 +322,6 @@ if "merged_dataframes" in st.session_state:
                     media_diff_vitorias = df_selecionado[df_selecionado["Difference"] > 0]["Difference"].mean() or 0
                     media_diff_derrotas = df_selecionado[df_selecionado["Difference"] < 0]["Difference"].mean() or 0
 
-                    # 🔳 Cartões estilizados
                     col4, col5, col6 = st.columns(3)
                     with col4:
                         st.markdown(f"""
@@ -308,7 +343,6 @@ if "merged_dataframes" in st.session_state:
                             </div>
                         """, unsafe_allow_html=True)
 
-
                     with col6:
                         st.markdown(f"""
                             <div style="background-color:#f8d7da; padding:15px; border-radius:10px; text-align:center;">
@@ -319,39 +353,31 @@ if "merged_dataframes" in st.session_state:
                             </div>
                         """, unsafe_allow_html=True)
 
+                    # 📊 Gráfico de Pizza - Resultado Geral do Head
 
-                    # 📊 Gráfico em Pizza
                     col7, col8, col9 = st.columns([1, 2, 1])
                     with col8:
-                        with st.container():
-                            st.markdown("""
-                                <div style="background-color: #f9f9f9; padding: 10px; border-radius: 12px; 
-                                            box-shadow: 0px 2px 5px rgba(0,0,0,0.1); text-align: center;">
-                                    <h4 style="margin-bottom: 0.5rem;">Resultado Geral do Head</h4>
-                            """, unsafe_allow_html=True)
+                        st.markdown("""
+                            <div style="background-color: #f9f9f9; padding: 10px; border-radius: 12px; 
+                                        box-shadow: 0px 2px 5px rgba(0,0,0,0.1); text-align: center;">
+                                <h4 style="margin-bottom: 0.5rem;">Resultado Geral do Head</h4>
+                        """, unsafe_allow_html=True)
 
-                            fig = go.Figure(
-                                data=[go.Pie(
-                                    labels=["Vitórias", "Derrotas"],
-                                    values=[vitorias, derrotas],
-                                    marker=dict(colors=["green", "red"]),
-                                    hole=0.6,
-                                    textinfo='label+percent',
-                                    textposition='outside',
-                                    textfont=dict(size=20, color="black", family="Arial Black"),
-                                )]
-                            )
+                        fig = go.Figure(data=[go.Pie(
+                            labels=["Vitórias", "Derrotas"],
+                            values=[vitorias, derrotas],
+                            marker=dict(colors=["#10CF9B", "#F44336"]),  # 💚 Verde e ❤️ Vermelho no padrão
+                            hole=0.6,
+                            textinfo='label+percent',
+                            textposition='outside',
+                            textfont=dict(size=20, color="black", family="Arial Black"),
+                        )])
 
-                            fig.update_layout(
-                                margin=dict(t=10, b=10, l=10, r=10),
-                                height=270,
-                                showlegend=False
-                            )
+                        fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=270, showlegend=False)
+                        st.plotly_chart(fig, use_container_width=True)
+                        st.markdown("</div>", unsafe_allow_html=True)
 
-                            st.plotly_chart(fig, use_container_width=True)
-                            st.markdown("</div>", unsafe_allow_html=True)
 
-                    # 📊 Gráfico de Barras - Diferença por Local
                     df_sorted = df_selecionado.sort_values(by="Difference")
                     cores = df_sorted["Difference"].apply(
                         lambda x: f"rgba(0, 128, 0, {min(1, abs(x)/10)})" if x > 0 else f"rgba(220, 20, 60, {min(1, abs(x)/10)})"
@@ -369,14 +395,8 @@ if "merged_dataframes" in st.session_state:
 
                     fig_bar.update_layout(
                         title=dict(text="Diferença por Local", font=dict(size=20, color="black", family="Arial Black")),
-                        xaxis=dict(
-                            title=dict(text="Local", font=dict(size=20, color="black", family="Arial Black")),
-                            tickfont=dict(size=20, color="black", family="Arial Black")
-                        ),
-                        yaxis=dict(
-                            title=dict(text="Diferença (sc/ha)", font=dict(size=20, color="black", family="Arial Black")),
-                            tickfont=dict(size=20, color="black", family="Arial Black")
-                        ),
+                        xaxis=dict(title=dict(text="Local", font=dict(size=20, color="black", family="Arial Black")), tickfont=dict(size=20, color="black", family="Arial Black")),
+                        yaxis=dict(title=dict(text="Diferença (sc/ha)", font=dict(size=20, color="black", family="Arial Black")), tickfont=dict(size=20, color="black", family="Arial Black")),
                         height=800,
                         margin=dict(t=50, b=80),
                         showlegend=False,
@@ -385,45 +405,68 @@ if "merged_dataframes" in st.session_state:
 
                     st.plotly_chart(fig_bar, use_container_width=True)
 
-                    from st_aggrid import AgGrid, GridOptionsBuilder
+                # 🌟 Comparacao Head com Multiplos Checks - SEPARADO e SEM depender da selecao 1x1
+                st.markdown("### 📊 Comparacao do Head com Multiplos Checks")
 
-                    # 📋 Tabela de Comparação com Múltiplos Checks
-                    st.markdown("### 📋 Comparação do Head com Múltiplos Checks")
+                cultivares_unicos = sorted(df_resultado_h2h["Head"].unique())
+                head_unico = st.selectbox("Selecione o Cultivar Head (referência)", options=cultivares_unicos, key="multi_head")
+                opcoes_checks = [c for c in cultivares_unicos if c != head_unico]
+                checks_selecionados = st.multiselect("Selecione os Cultivares Check para comparação", options=opcoes_checks, key="multi_checks")
 
-                    # Seleciona um único Head
-                    head_unico = st.selectbox("Selecione o Cultivar Head (referência)", options=cultivares_unicos, key="multi_head")
+                if head_unico and checks_selecionados:
+                    df_multi = df_resultado_h2h[
+                        (df_resultado_h2h["Head"] == head_unico) &
+                        (df_resultado_h2h["Check"].isin(checks_selecionados))
+                    ]
 
-                    # Lista de Checks (exclui o Head selecionado)
-                    opcoes_checks = [c for c in cultivares_unicos if c != head_unico]
-                    checks_selecionados = st.multiselect("Selecione os Cultivares Check para comparação", options=opcoes_checks, key="multi_checks")
+                    if not df_multi.empty:
+                        resumo = df_multi.groupby("Check").agg({
+                            "Number_of_Win": "sum",
+                            "Number_of_Comparison": "sum",
+                            "Check_Mean": "mean"
+                        }).reset_index()
 
-                    if head_unico and checks_selecionados:
-                        df_multi = df_resultado_h2h[
-                            (df_resultado_h2h["Head"] == head_unico) &
-                            (df_resultado_h2h["Check"].isin(checks_selecionados))
-                        ]
+                        resumo.rename(columns={
+                            "Check": "Cultivar Check",
+                            "Number_of_Win": "Vitórias",
+                            "Number_of_Comparison": "Num_Locais",
+                            "Check_Mean": "Prod_sc_ha_media"
+                        }, inplace=True)
 
-                        if not df_multi.empty:
-                            resumo = df_multi.groupby("Check").agg({
-                                "Number_of_Win": "sum",
-                                "Number_of_Comparison": "sum",
-                                "Difference": "mean"
-                            }).reset_index()
+                        resumo["% Vitórias"] = (resumo["Vitórias"] / resumo["Num_Locais"] * 100).round(1)
+                        resumo["Prod_sc_ha_media"] = resumo["Prod_sc_ha_media"].round(1)
+                        resumo["Diferença Média"] = (resumo["% Vitórias"] - 50).round(1)
 
-                            resumo.rename(columns={
-                                "Check": "Cultivar Check",
-                                "Number_of_Win": "Vitórias",
-                                "Number_of_Comparison": "Num_Locais",
-                                "Difference": "Prod_Média"
-                            }, inplace=True)
+                        resumo = resumo[["Cultivar Check", "% Vitórias", "Num_Locais", "Prod_sc_ha_media", "Diferença Média"]]
 
-                            resumo["% Vitórias"] = (resumo["Vitórias"] / resumo["Num_Locais"] * 100).round(1)
-                            resumo["Prod_Média"] = resumo["Prod_Média"].round(1)
-                            resumo["Diferença Média"] = (resumo["% Vitórias"] - 50).round(1)
+                        col_tabela, col_grafico = st.columns([1.3, 1.7])
 
-                            resumo = resumo[["Cultivar Check", "% Vitórias", "Num_Locais", "Prod_Média", "Diferença Média"]]
+                        with col_tabela:
+                            st.markdown("### 📊 Tabela Comparativa")
+                            gb = GridOptionsBuilder.from_dataframe(resumo)
+                            gb.configure_default_column(cellStyle={'fontSize': '14px'})
+                            gb.configure_grid_options(headerHeight=30)
+                            custom_css = {
+                                ".ag-header-cell-label": {
+                                    "font-weight": "bold",
+                                    "font-size": "15px",
+                                    "color": "black"
+                                }
+                            }
+                            AgGrid(resumo, gridOptions=gb.build(), height=400, custom_css=custom_css)
 
-                            # 📊 Gráfico de barras - Diferença Média
+                            buffer = io.BytesIO()
+                            with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+                                resumo.to_excel(writer, sheet_name="comparacao_multi_check", index=False)
+
+                            st.download_button(
+                                label="📅 Baixar Comparacao (Excel)",
+                                data=buffer.getvalue(),
+                                file_name=f"comparacao_{head_unico}_vs_checks.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+
+                        with col_grafico:
                             fig_diff = go.Figure()
                             fig_diff.add_trace(go.Bar(
                                 y=resumo["Cultivar Check"],
@@ -436,61 +479,17 @@ if "merged_dataframes" in st.session_state:
                             ))
 
                             fig_diff.update_layout(
-                                title=dict(
-                                    text="📊 Diferença Média de Produtividade entre Cultivares",
-                                    font=dict(size=22, family="Arial Black", color="black")
-                                ),
-                                xaxis=dict(
-                                    title=dict(text="Diferença Média (sc/ha)", font=dict(size=18, family="Arial Black", color="black")),
-                                    tickfont=dict(size=16, family="Arial Black", color="black")
-                                ),
-                                yaxis=dict(
-                                    title=dict(text="Cultivar Check", font=dict(size=18, family="Arial Black", color="black")),
-                                    tickfont=dict(size=16, family="Arial Black", color="black")
-                                ),
-                                margin=dict(t=60, b=60, l=60, r=40),
-                                height=500,
+                                title=dict(text="📊 Diferença Média de Produtividade", font=dict(size=20, family="Arial Black")),
+                                xaxis=dict(title=dict(text="Diferença Média (sc/ha)", font=dict(size=16)), tickfont=dict(size=14)),
+                                yaxis=dict(title=dict(text="Check"), tickfont=dict(size=14)),
+                                margin=dict(t=30, b=40, l=60, r=30),
+                                height=400,
                                 showlegend=False
                             )
 
                             st.plotly_chart(fig_diff, use_container_width=True)
-
-                            # AgGrid estilizado
-                            gb = GridOptionsBuilder.from_dataframe(resumo)
-                            gb.configure_default_column(cellStyle={'fontSize': '14px'})
-                            gb.configure_grid_options(headerHeight=30)
-                            custom_css = {
-                                ".ag-header-cell-label": {
-                                    "font-weight": "bold",
-                                    "font-size": "15px",
-                                    "color": "black"
-                                }
-                            }
-
-                            AgGrid(
-                                resumo,
-                                gridOptions=gb.build(),
-                                height=400,
-                                custom_css=custom_css
-                            )
-
-                            # 🔽 Exportação para Excel
-                            buffer = io.BytesIO()
-                            with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-                                resumo.to_excel(writer, sheet_name="comparacao_multi_check", index=False)
-
-                            st.download_button(
-                                label="📥 Baixar Comparação (Excel)",
-                                data=buffer.getvalue(),
-                                file_name=f"comparacao_{head_unico}_vs_checks.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                        else:
-                            st.info("❕ Nenhuma comparação disponível com os Checks selecionados.")
-
-
-
-
+                    else:
+                        st.info("❓ Nenhuma comparação disponível com os Checks selecionados.")
 
 
 
