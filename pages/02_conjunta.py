@@ -4,11 +4,13 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from scipy.stats import gaussian_kde
+from st_aggrid import AgGrid, GridOptionsBuilder
+
 import io
 
 st.title("📊 Resultados de Produção")
 st.markdown(
-    "Breve descriçao - Nesta página, você pode visualizar os resultados de produção de soja, incluindo a faixa de densidade e os resultados de cada faixa."
+    "Nesta página, você pode visualizar os resultados de produção de soja, incluindo a faixa de densidade e os resultados de cada faixa."
 )
 
 if "merged_dataframes" in st.session_state:
@@ -157,23 +159,44 @@ if "merged_dataframes" in st.session_state:
             
 
             
-
+        
         with col_tabela:
             aba1, aba2= st.tabs(["📊 Faixa + Densidade", "📋 Resultados Faixa"])
-
+            
             with aba1:
                 colunas_visiveis = [
-                    "Produtor", "Cultivar", "UF", "Plantio", "Colheita", "Index","populacao","GM",
+                    "Produtor", "Cultivar", "UF", "Plantio", "Colheita", "Index", "populacao", "GM",
                     "Área Parcela", "plts_10m", "Pop_Final", "Umidade (%)",
                     "prod_kg_ha", "prod_sc_ha", "PMG"
                 ]
 
                 df_visualizacao = df_final_av7[[col for col in colunas_visiveis if col in df_final_av7.columns]]
-                st.dataframe(df_visualizacao, height=500)
+                st.markdown("### 📋 Tabela Informações de Produção")
 
+                # Formatação com AgGrid
+                gb = GridOptionsBuilder.from_dataframe(df_visualizacao)
+                gb.configure_default_column(cellStyle={'fontSize': '14px'})
+                gb.configure_grid_options(headerHeight=30)
+
+                custom_css = {
+                    ".ag-header-cell-label": {
+                        "font-weight": "bold",
+                        "font-size": "15px",
+                        "color": "black"
+                    }
+                }
+
+                AgGrid(
+                    df_visualizacao,
+                    gridOptions=gb.build(),
+                    height=500,
+                    custom_css=custom_css
+                )
+
+                # Botão de exportação
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df_final_av7.to_excel(writer, index=False, sheet_name="faixa_densidade")
+                    df_visualizacao.to_excel(writer, index=False, sheet_name="faixa_densidade")
 
                 st.download_button(
                     label="📅 Baixar Faixa + Densidade",
@@ -181,6 +204,8 @@ if "merged_dataframes" in st.session_state:
                     file_name="faixa_densidade.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+        	
 
             with aba2:
                 df_faixa_completo = df_final_av7[df_final_av7["Teste"] == "Faixa"].copy()
@@ -260,13 +285,13 @@ if "merged_dataframes" in st.session_state:
                 df_faixa_completo["AIV"] = df_faixa_completo[aiv_cols].mean(axis=1, skipna=True).round(1)
 
                 colunas_visiveis_faixa = [
-                    "Produtor", "Cultivar", "UF", "Plantio", "Colheita","MAT", "Index","populacao","GM","GM_obs",
+                    "Produtor", "Cultivar", "UF", "Plantio", "Colheita", "Index","populacao","GM","GM_obs",
                     "Pop_Final", "Umidade (%)", "prod_kg_ha", "prod_sc_ha", "PMG",
                     "ENG","AC","AIV", "ALT"
                 ]
 
                 df_visualizacao_faixa = df_faixa_completo[[col for col in colunas_visiveis_faixa if col in df_faixa_completo.columns]]
-                #st.dataframe(df_visualizacao_faixa, height=600)
+                st.markdown("### 📋 Tabela Informações de Produção - Ensaios de Faixa")
 
 
                 from st_aggrid import AgGrid, GridOptionsBuilder
@@ -501,7 +526,7 @@ if "merged_dataframes" in st.session_state:
                 df_conjunta_cultivar = df_conjunta_cultivar.round(1)
 
                 # Título da seção
-                st.markdown("#### 📈 Conjunta Produção (sc/ha) e outros componentes de produção por Cultivar")
+                st.markdown("### 📈 Conjunta Produção (sc/ha) e outros componentes de produção por Cultivar")
 
                 # Filtro por classificação
                 with st.expander("🎯 Filtrar por Classificação"):
@@ -2064,7 +2089,7 @@ if "merged_dataframes" in st.session_state:
 
 
                  
-
+                
                 # 🧩 Heatmap Interativo: Desempenho Relativo por Local x Cultivar
 
                 with st.expander("🧩 Heatmap Interativo: Desempenho Relativo por Local x Cultivar", expanded=False):
@@ -2132,79 +2157,80 @@ if "merged_dataframes" in st.session_state:
                         st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.warning("❌ Dados insuficientes para gerar o heatmap.")
+                
 
 
-            # 🏅 Heatmap Interativo: Ranking Relativo por Local x Cultivar
+                # 🏅 Heatmap Interativo: Ranking Relativo por Local x Cultivar
 
-            with st.expander("🧩 Heatmap Interativo: Ranking Relativo por Local x Cultivar", expanded=False):
-                df_heatmap = df_faixa_completo.copy()
+                with st.expander("🧩 Heatmap Interativo: Ranking Relativo por Local x Cultivar", expanded=False):
+                    df_heatmap = df_faixa_completo.copy()
 
-                if not df_heatmap.empty and "prod_sc_ha" in df_heatmap.columns and "Cultivar" in df_heatmap.columns:
-                    df_heatmap["Local"] = df_heatmap["Fazenda"].astype(str) + "_" + df_heatmap["Cidade"].astype(str)
+                    if not df_heatmap.empty and "prod_sc_ha" in df_heatmap.columns and "Cultivar" in df_heatmap.columns:
+                        df_heatmap["Local"] = df_heatmap["Fazenda"].astype(str) + "_" + df_heatmap["Cidade"].astype(str)
 
-                    # ⬇️ Calcular ranking (1 = melhor)
-                    df_heatmap["Rank_Local"] = (
-                        df_heatmap.groupby("Local")["prod_sc_ha"]
-                        .rank(method="min", ascending=False)
-                    )
-
-                    # Pivot para gerar a matriz de rankings
-                    heatmap_pivot = df_heatmap.pivot_table(
-                        index="Local",
-                        columns="Cultivar",
-                        values="Rank_Local",
-                        aggfunc="min"
-                    )
-
-                    # Ordena os locais
-                    if "Microrregiao" in df_heatmap.columns:
-                        locais_com_regional = df_heatmap[["Local", "Microrregiao"]].drop_duplicates()
-                        locais_ordenados = (
-                            locais_com_regional
-                            .sort_values(by=["Microrregiao", "Local"])
-                            .set_index("Local")
+                        # ⬇️ Calcular ranking (1 = melhor)
+                        df_heatmap["Rank_Local"] = (
+                            df_heatmap.groupby("Local")["prod_sc_ha"]
+                            .rank(method="min", ascending=False)
                         )
-                        ordem_local = locais_ordenados.index.tolist()
-                        heatmap_pivot = heatmap_pivot.loc[heatmap_pivot.index.intersection(ordem_local)]
-                        heatmap_pivot = heatmap_pivot.reindex(ordem_local)
 
-                    # Máximo ranking encontrado (ajuste automático)
-                    max_rank = int(heatmap_pivot.max().max())
-
-                    # Escala de cores: do verde escuro (ranking 1) ao verde claro (ranking alto)
-                    escala_verde = [
-                        (0.0, "#006400"),   # verde escuro (melhor)
-                        (0.5, "#66CDAA"),   # verde médio
-                        (1.0, "#C1E1C1")    # verde claro (pior)
-                    ]
-
-                    font_bold = dict(size=20, family="Arial Bold", color="black")
-
-                    fig = px.imshow(
-                        heatmap_pivot,
-                        text_auto=True,
-                        color_continuous_scale=escala_verde,
-                        aspect="auto",
-                        labels=dict(x="Cultivar", y="Local", color="Ranking")
-                    )
-
-                    fig.update_layout(
-                        title=dict(text="Ranking Relativo por Cultivar e Local (1 = Melhor)", font=font_bold),
-                        xaxis=dict(title=dict(text="Cultivar", font=font_bold), tickfont=font_bold),
-                        yaxis=dict(title=dict(text="Produtor + Cidade", font=font_bold), tickfont=font_bold),
-                        plot_bgcolor="white",
-                        coloraxis_colorbar=dict(
-                            title=dict(text="Ranking", font=font_bold),
-                            tickfont=font_bold
+                        # Pivot para gerar a matriz de rankings
+                        heatmap_pivot = df_heatmap.pivot_table(
+                            index="Local",
+                            columns="Cultivar",
+                            values="Rank_Local",
+                            aggfunc="min"
                         )
-                    )
 
-                    fig.update_traces(textfont=dict(size=16, family="Arial Bold", color="black"))
+                        # Ordena os locais
+                        if "Microrregiao" in df_heatmap.columns:
+                            locais_com_regional = df_heatmap[["Local", "Microrregiao"]].drop_duplicates()
+                            locais_ordenados = (
+                                locais_com_regional
+                                .sort_values(by=["Microrregiao", "Local"])
+                                .set_index("Local")
+                            )
+                            ordem_local = locais_ordenados.index.tolist()
+                            heatmap_pivot = heatmap_pivot.loc[heatmap_pivot.index.intersection(ordem_local)]
+                            heatmap_pivot = heatmap_pivot.reindex(ordem_local)
 
-                    st.plotly_chart(fig, use_container_width=True)
+                        # Máximo ranking encontrado (ajuste automático)
+                        max_rank = int(heatmap_pivot.max().max())
 
-                else:
-                    st.warning("❌ Dados insuficientes para gerar o heatmap.")
+                        # Escala de cores: do verde escuro (ranking 1) ao verde claro (ranking alto)
+                        escala_verde = [
+                            (0.0, "#006400"),   # verde escuro (melhor)
+                            (0.5, "#66CDAA"),   # verde médio
+                            (1.0, "#C1E1C1")    # verde claro (pior)
+                        ]
+
+                        font_bold = dict(size=20, family="Arial Bold", color="black")
+
+                        fig = px.imshow(
+                            heatmap_pivot,
+                            text_auto=True,
+                            color_continuous_scale=escala_verde,
+                            aspect="auto",
+                            labels=dict(x="Cultivar", y="Local", color="Ranking")
+                        )
+
+                        fig.update_layout(
+                            title=dict(text="Ranking Relativo por Cultivar e Local (1 = Melhor)", font=font_bold),
+                            xaxis=dict(title=dict(text="Cultivar", font=font_bold), tickfont=font_bold),
+                            yaxis=dict(title=dict(text="Produtor + Cidade", font=font_bold), tickfont=font_bold),
+                            plot_bgcolor="white",
+                            coloraxis_colorbar=dict(
+                                title=dict(text="Ranking", font=font_bold),
+                                tickfont=font_bold
+                            )
+                        )
+
+                        fig.update_traces(textfont=dict(size=16, family="Arial Bold", color="black"))
+
+                        st.plotly_chart(fig, use_container_width=True)
+
+                    else:
+                        st.warning("❌ Dados insuficientes para gerar o heatmap.")
 
 
                              

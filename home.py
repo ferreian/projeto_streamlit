@@ -16,6 +16,38 @@ st.set_page_config(layout="wide")
 
 # 👉 Descrição da página
 
+st.title("🎲 Avaliações de Soja")
+st.subheader("👏🏻👏🏻 Bem-vindo ao **JAUM** Análise de Dados")
+st.divider()
+
+st.markdown("## 🌱 JAUM – Jornada de Avaliação Unificada de Materiais")
+
+st.markdown("""
+**O que é o JAUM?**  
+JAUM representa uma etapa essencial conduzida pelo **Time de Desenvolvimento Técnico de Culturas**, responsável por avaliar, monitorar e posicionar cultivares em diferentes regiões do Brasil antes do lançamento comercial.
+
+Essa jornada busca entender o desempenho agronômico dos materiais, auxiliando na tomada de decisão e recomendação técnica com base em dados reais de campo.
+
+---
+
+### 🔠 Significado da sigla:
+
+- **J – Jornada**  
+  Percurso que o cultivar faz desde os testes iniciais até sua recomendação para lançamento, considerando diferentes regiões, ambientes e manejos.
+
+- **A – Avaliação**  
+  Análise detalhada do desempenho agronômico, sanidade, produtividade e estabilidade dos cultivares ao longo dos ciclos.
+
+- **U – Unificação**  
+  Consolidação das informações geradas nos ensaios, permitindo uma visão integrada e comparativa entre diferentes materiais.
+
+- **M – Monitoramento**  
+  Acompanhamento contínuo e **posicionamento técnico** baseado em dados reais de campo, apoiando decisões estratégicas e operacionais.
+
+---
+""")
+
+
 st.markdown("""
 Esta página é responsável por **carregar, integrar e exibir os dados das avaliações** de soja diretamente do banco Supabase.
 Você pode optar por carregar com cache (mais rápido) ou buscar os dados mais atualizados (mais lento).
@@ -151,25 +183,32 @@ if "dataframes" in st.session_state:
     st.session_state["merged_dataframes"] = merged_dataframes_estado
 
     # Exibir os dados mesclados com estado
-    st.subheader("🔹 Dados Mesclados com Estado")
-    df_merged_selectbox = st.selectbox("Escolha um DataFrame mesclado para visualizar", list(merged_dataframes_estado.keys()))
-    selected_merged_df = merged_dataframes_estado.get(df_merged_selectbox, None)
+    with st.expander("🔹 Base de dados sem tratamento"):
+        st.subheader("📄 Visualização dos Dados carregados")
 
-    if selected_merged_df is not None:
-        st.dataframe(selected_merged_df, height=400)
-
-        # Exportação para Excel com os dados finais
-        output_merged = io.BytesIO()
-        with pd.ExcelWriter(output_merged, engine='xlsxwriter') as writer:
-            selected_merged_df.to_excel(writer, index=False, sheet_name=df_merged_selectbox[:31])
-
-        st.download_button(
-            label=f"📥 Baixar {df_merged_selectbox}",
-            data=output_merged.getvalue(),
-            file_name=f"{df_merged_selectbox}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        df_merged_selectbox = st.selectbox(
+            "Escolha uma avaliacão para visualizar",
+            list(merged_dataframes_estado.keys())
         )
-    else:
-        st.error("❌ Nenhum dado disponível para exibição.")
+
+        selected_merged_df = merged_dataframes_estado.get(df_merged_selectbox, None)
+
+        if selected_merged_df is not None:
+            st.dataframe(selected_merged_df, height=400)
+
+            # Exportação para Excel com os dados finais
+            output_merged = io.BytesIO()
+            with pd.ExcelWriter(output_merged, engine='xlsxwriter') as writer:
+                selected_merged_df.to_excel(writer, index=False, sheet_name=df_merged_selectbox[:31])
+
+            st.download_button(
+                label=f"📥 Baixar {df_merged_selectbox}",
+                data=output_merged.getvalue(),
+                file_name=f"{df_merged_selectbox}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.error("❌ Nenhum dado disponível para exibição.")
+
 else:
     st.error("❌ Os dados ainda não foram carregados. Clique no botão acima para carregá-los.")

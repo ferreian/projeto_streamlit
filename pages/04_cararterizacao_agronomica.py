@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import io
 
-st.title("🌱 Caracterização Agronômica (AV5)")
+st.title("📊 Caracterização Agronômica")
 st.markdown("Explore os dados de caracterização agronômica nas faixas avaliadas. Aplique filtros para visualizar os dados conforme necessário.")
 
 # ✅ Verifica se df_av5 está carregado
@@ -33,11 +33,23 @@ if "merged_dataframes" in st.session_state:
         df_caract["Produtor"] = df_caract["Produtor"].astype(str).str.upper()
         df_caract["Fazenda"] = df_caract["Fazenda"].astype(str).str.upper()
 
+        # 🛠️ Substituições nas cultivares
+        substituicoes = {
+            "B�NUS IPRO": "BÔNUS IPRO",
+            "DOM�NIO IPRO": "DOMÍNIO IPRO",
+            "F�RIA CE": "FÚRIA CE",
+            "V�NUS CE": "VÊNUS CE",
+            "GH 2383 IPRO": "GH 2483 IPRO"
+        }
+
+        if "Cultivar" in df_caract.columns:
+            df_caract["Cultivar"] = df_caract["Cultivar"].replace(substituicoes)
+
         # 🔍 Layout com filtros
         col_filtros, col_tabela = st.columns([1.5, 8.5])
 
         with col_filtros:
-            st.markdown("### 🎛️ Filtros")
+            st.markdown("### 🎧 Filtros")
 
             filtros = {
                 "Microrregiao": "Microrregião",
@@ -59,8 +71,10 @@ if "merged_dataframes" in st.session_state:
                                 selecionados.append(op)
                         if selecionados:
                             df_caract = df_caract[df_caract[coluna].isin(selecionados)]
+
         
-        # 📊 Tabela
+
+        
         # 📊 Tabela
         with col_tabela:
             colunas_principais = [
@@ -162,74 +176,236 @@ if "merged_dataframes" in st.session_state:
 
             colunas_visiveis = [col for col in colunas_visiveis if col in df_caract.columns]
 
-            st.markdown("### 📋 Tabela de Caracterização Agronômica (AV5)")
-            st.dataframe(df_caract[colunas_visiveis], use_container_width=True)
+            st.markdown("### 📋 Tabela de Caracterização Agronômica")
+            #st.dataframe(df_caract[colunas_visiveis], use_container_width=True)
 
-            # 📥 Exportar
-            output_av5 = io.BytesIO()
-            with pd.ExcelWriter(output_av5, engine="xlsxwriter") as writer:
-                df_caract[colunas_visiveis].to_excel(writer, index=False, sheet_name="caracterizacao_av5")
+            from st_aggrid import AgGrid, GridOptionsBuilder
 
-            st.download_button(
-                label="📥 Baixar Caracterização (AV5)",
-                data=output_av5.getvalue(),
-                file_name="caracterizacao_agronomica_av5.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            
+
+            df_fmt_caract = df_caract[colunas_visiveis].copy()
+
+            # Cria o builder com nome único
+            gb_caract = GridOptionsBuilder.from_dataframe(df_fmt_caract)
+
+            # Formata colunas float com 1 casa decimal
+            colunas_float = df_fmt_caract.select_dtypes(include=["float", "float64"]).columns
+            for col in colunas_float:
+                gb_caract.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
+
+            # Fonte e cabeçalho
+            gb_caract.configure_default_column(cellStyle={'fontSize': '14px'})
+            gb_caract.configure_grid_options(headerHeight=30)
+
+            # Estilo do cabeçalho
+            custom_css = {
+                ".ag-header-cell-label": {
+                    "font-weight": "bold",
+                    "font-size": "15px",
+                    "color": "black"
+                }
+            }
+
+            # Exibe com AgGrid
+            AgGrid(
+                df_fmt_caract,
+                gridOptions=gb_caract.build(),
+                height=500,
+                custom_css=custom_css,
+                use_container_width=True
             )
 
 
-            
+
             # ====================== 📊 Resumo por Cultivar – Número de Vagens ======================
-            st.markdown("### 📊 Resumo de Caracterização por Cultivar (Número de Vagens)")
+            import io
+            import numpy as np
 
-            colunas_vagens = [
-                "NV_TS_medio", "NV_TM_media", "NV_TI_media", "NV_media"
-            ]
+            # Substitui 0 por NaN para ignorar nos cálculos de média
+            colunas_vagens = ["NV_TS_medio", "NV_TM_media", "NV_TI_media"]
+            df_caract[colunas_vagens] = df_caract[colunas_vagens].replace(0, np.nan)
 
-            # 🎯 Agrupa por cultivar e calcula média
+            # Agrupa por cultivar e calcula média ignorando NaN
             df_resumo_vagens = df_caract.groupby("Cultivar").agg(
                 GM=("GM", "first"),
                 **{col: (col, "mean") for col in colunas_vagens}
             ).reset_index()
 
-            # ➕ Calcula percentuais apenas se NV_media > 0
+            # ➕ Recalcula NV_media como soma das médias dos terços
+            df_resumo_vagens["NV_media"] = (
+                df_resumo_vagens["NV_TS_medio"] +
+                df_resumo_vagens["NV_TM_media"] +
+                df_resumo_vagens["NV_TI_media"]
+            ).round(2)
+
+            # Calcula percentuais apenas se NV_media > 0 e não nulo
             df_resumo_vagens["NV_TS_perc"] = df_resumo_vagens.apply(
-                lambda row: round((row["NV_TS_medio"] / row["NV_media"]) * 100, 2) if row["NV_media"] > 0 else None,
+                lambda row: round((row["NV_TS_medio"] / row["NV_media"]) * 100, 2)
+                if pd.notnull(row["NV_media"]) and row["NV_media"] > 0 else None,
                 axis=1
             )
             df_resumo_vagens["NV_TM_perc"] = df_resumo_vagens.apply(
-                lambda row: round((row["NV_TM_media"] / row["NV_media"]) * 100, 2) if row["NV_media"] > 0 else None,
+                lambda row: round((row["NV_TM_media"] / row["NV_media"]) * 100, 2)
+                if pd.notnull(row["NV_media"]) and row["NV_media"] > 0 else None,
                 axis=1
             )
             df_resumo_vagens["NV_TI_perc"] = df_resumo_vagens.apply(
-                lambda row: round((row["NV_TI_media"] / row["NV_media"]) * 100, 2) if row["NV_media"] > 0 else None,
+                lambda row: round((row["NV_TI_media"] / row["NV_media"]) * 100, 2)
+                if pd.notnull(row["NV_media"]) and row["NV_media"] > 0 else None,
                 axis=1
             )
 
-            # 🔄 Reorganiza colunas
-            colunas_visiveis_vagens = [
-                "Cultivar", "GM",
-                "NV_TS_medio", "NV_TM_media", "NV_TI_media", "NV_media",
-                "NV_TS_perc", "NV_TM_perc", "NV_TI_perc"
-            ]
 
-            df_resumo_vagens = df_resumo_vagens[colunas_visiveis_vagens]
+            # Formata com AgGrid
+            from st_aggrid import AgGrid, GridOptionsBuilder
 
-            # 🧾 Mostra tabela
-            st.dataframe(df_resumo_vagens, use_container_width=True)
+            df_fmt_vagens = df_resumo_vagens.copy()
+            gb_vagens = GridOptionsBuilder.from_dataframe(df_fmt_vagens)
 
+            colunas_float = df_fmt_vagens.select_dtypes(include=["float", "float64"]).columns
+            for col in colunas_float:
+                gb_vagens.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
 
-            # 📥 Exportar
-            output_vagens = io.BytesIO()
-            with pd.ExcelWriter(output_vagens, engine="xlsxwriter") as writer:
-                df_resumo_vagens.to_excel(writer, index=False, sheet_name="resumo_vagens")
+            gb_vagens.configure_default_column(cellStyle={'fontSize': '14px'})
+            gb_vagens.configure_grid_options(headerHeight=30)
+
+            custom_css = {
+                ".ag-header-cell-label": {
+                    "font-weight": "bold",
+                    "font-size": "15px",
+                    "color": "black"
+                }
+            }
+
+            AgGrid(
+                df_fmt_vagens,
+                gridOptions=gb_vagens.build(),
+                height=500,
+                custom_css=custom_css,
+                use_container_width=True
+            )
+
+            # 📝 Legenda
+            st.markdown("""ℹ️ **Legenda**:**NV_TS_medio**: Número médio de vagens no terço superior;**NV_TM_media**: Número médio de vagens no terço médio;
+            **NV_TI_media**: Número médio de vagens no terço inferior; **NV_media**: Total de vagens por planta ;
+            **NV_1G**: Número médio de grãos por vagem no terço superior; **NV_2G**: Número médio de grãos por vagem no terço médio;            
+            """)
+
+            # 📥 Botão de exportação para Excel
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                df_fmt_vagens.to_excel(writer, index=False, sheet_name="resumo_vagens")
 
             st.download_button(
-                label="📥 Baixar Resumo (Número de Vagens)",
-                data=output_vagens.getvalue(),
-                file_name="resumo_cultivar_vagens.xlsx",
+                label="📥 Baixar Resumo de Vagens",
+                data=output.getvalue(),
+                file_name="resumo_vagens.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
+
+            
+            # ====================== 📊 Resumo por Cultivar – Número de Grãos por Vagem ======================
+            st.markdown("### 📊 Resumo de Caracterização por Cultivar (Número de Grãos por Vagem)")
+
+            # Substitui 0 por NaN nos cálculos
+            colunas_graos = [
+                "NV_TS_1G", "NV_TS_2G", "NV_TS_3G", "NV_TS_4G",
+                "NV_TM_1G", "NV_TM_2G", "NV_TM_3G", "NV_TM_4G",
+                "NV_TI_1G", "NV_TI_2G", "NV_TI_3G", "NV_TI_4G"
+            ]
+            df_caract[colunas_graos] = df_caract[colunas_graos].replace(0, np.nan)
+
+            # Agrupa por cultivar e calcula média
+            df_resumo_graos = df_caract.groupby("Cultivar").agg(
+                GM=("GM", "first"),
+                **{col: (col, "mean") for col in colunas_graos}
+            ).reset_index()
+
+            # 🧮 Recalcula NV_1G a NV_4G como soma dos terços 
+            df_resumo_graos["NV_1G"] = df_resumo_graos[["NV_TS_1G", "NV_TM_1G", "NV_TI_1G"]].sum(axis=1, skipna=True).round(1)
+            df_resumo_graos["NV_2G"] = df_resumo_graos[["NV_TS_2G", "NV_TM_2G", "NV_TI_2G"]].sum(axis=1, skipna=True).round(1)
+            df_resumo_graos["NV_3G"] = df_resumo_graos[["NV_TS_3G", "NV_TM_3G", "NV_TI_3G"]].sum(axis=1, skipna=True).round(1)
+            df_resumo_graos["NV_4G"] = df_resumo_graos[["NV_TS_4G", "NV_TM_4G", "NV_TI_4G"]].sum(axis=1, skipna=True).round(1)
+
+            # Percentuais com proteção e multiplicando por 100
+            def calcula_percentual(numerador, denominador):
+                return ((numerador / denominador.replace(0, pd.NA)) * 100).round(1)
+
+            df_resumo_graos["NV_TS_1G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_1G"], df_resumo_graos["NV_1G"])
+            df_resumo_graos["NV_TM_1G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_1G"], df_resumo_graos["NV_1G"])
+            df_resumo_graos["NV_TI_1G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_1G"], df_resumo_graos["NV_1G"])
+
+            df_resumo_graos["NV_TS_2G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_2G"], df_resumo_graos["NV_2G"])
+            df_resumo_graos["NV_TM_2G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_2G"], df_resumo_graos["NV_2G"])
+            df_resumo_graos["NV_TI_2G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_2G"], df_resumo_graos["NV_2G"])
+
+            df_resumo_graos["NV_TS_3G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_3G"], df_resumo_graos["NV_3G"])
+            df_resumo_graos["NV_TM_3G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_3G"], df_resumo_graos["NV_3G"])
+            df_resumo_graos["NV_TI_3G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_3G"], df_resumo_graos["NV_3G"])
+
+            df_resumo_graos["NV_TS_4G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_4G"], df_resumo_graos["NV_4G"])
+            df_resumo_graos["NV_TM_4G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_4G"], df_resumo_graos["NV_4G"])
+            df_resumo_graos["NV_TI_4G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_4G"], df_resumo_graos["NV_4G"])
+
+
+            # 🔄 Lista manual das colunas que queremos formatar
+            colunas_formatar = [
+                "NV_TS_1G", "NV_TS_2G", "NV_TS_3G", "NV_TS_4G",
+                "NV_TM_1G", "NV_TM_2G", "NV_TM_3G", "NV_TM_4G",
+                "NV_TI_1G", "NV_TI_2G", "NV_TI_3G", "NV_TI_4G",
+                "NV_1G", "NV_2G", "NV_3G", "NV_4G",
+                "NV_TS_1G_perc", "NV_TM_1G_perc", "NV_TI_1G_perc",
+                "NV_TS_2G_perc", "NV_TM_2G_perc", "NV_TI_2G_perc",
+                "NV_TS_3G_perc", "NV_TM_3G_perc", "NV_TI_3G_perc",
+                "NV_TS_4G_perc", "NV_TM_4G_perc", "NV_TI_4G_perc"
+            ]
+
+            # 🔄 Garante tipo float e arredonda
+            for col in colunas_formatar:
+                if col in df_resumo_graos.columns:
+                    df_resumo_graos[col] = pd.to_numeric(df_resumo_graos[col], errors='coerce').round(1)
+
+            # 🧾 Cópia do DataFrame para exibição formatada
+            df_fmt_graos = df_resumo_graos.copy()
+
+            # 🧱 Cria o grid builder
+            gb_graos = GridOptionsBuilder.from_dataframe(df_fmt_graos)
+
+            # 🔢 Aplica formatação nas colunas específicas
+            for col in colunas_formatar:
+                if col in df_fmt_graos.columns:
+                    gb_graos.configure_column(col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
+
+            # 🎨 Estilo das células e cabeçalho
+            gb_graos.configure_default_column(cellStyle={'fontSize': '14px'})
+            gb_graos.configure_grid_options(headerHeight=30)
+
+            # 📊 Exibe com AgGrid
+            AgGrid(
+                df_fmt_graos,
+                gridOptions=gb_graos.build(),
+                height=500,
+                custom_css=custom_css,
+                use_container_width=True
+            )
+
+
+
+
+            # 📥 Exportar (Grãos)
+            output_graos = io.BytesIO()
+            with pd.ExcelWriter(output_graos, engine="xlsxwriter") as writer:
+                df_resumo_graos.to_excel(writer, index=False, sheet_name="resumo_graos")
+
+            st.download_button(
+                label="📥 Baixar Resumo (Grãos por Vagem)",
+                data=output_graos.getvalue(),
+                file_name="resumo_cultivar_graos.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+
 
             # 📊 Visualizar Gráfico - Percentual de Vagens por Terço da Planta    
             
@@ -582,7 +758,40 @@ if "merged_dataframes" in st.session_state:
             colunas_visiveis_graos = [col for col in colunas_visiveis_graos if col in df_resumo_graos.columns]
 
             # 🧾 Mostra tabela
-            st.dataframe(df_resumo_graos[colunas_visiveis_graos], use_container_width=True)
+            from st_aggrid import AgGrid, GridOptionsBuilder
+
+            df_fmt = df_resumo_graos[colunas_visiveis_graos].copy()
+
+            # Cria o grid builder
+            gb = GridOptionsBuilder.from_dataframe(df_fmt)
+
+            # Aplica formatação para colunas numéricas
+            colunas_float = df_fmt.select_dtypes(include=["float", "float64"]).columns
+            for col in colunas_float:
+                gb.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
+
+            # Fonte da tabela e altura do cabeçalho
+            gb.configure_default_column(cellStyle={'fontSize': '14px'})
+            gb.configure_grid_options(headerHeight=30)
+
+            # CSS para o cabeçalho em negrito e preto
+            custom_css = {
+                ".ag-header-cell-label": {
+                    "font-weight": "bold",
+                    "font-size": "15px",
+                    "color": "black"
+                }
+            }
+
+            # Renderiza a tabela com AgGrid
+            AgGrid(
+                df_fmt,
+                gridOptions=gb.build(),
+                height=500,
+                custom_css=custom_css,
+                use_container_width=True
+            )
+
 
 
             # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 4 Grãos no Terço Superior

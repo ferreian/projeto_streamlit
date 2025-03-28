@@ -5,8 +5,8 @@ import plotly.graph_objects as go
 
 from st_aggrid import AgGrid, GridOptionsBuilder
 
-st.title("🌱 Avaliação AV7 - Tratamentos de Soja")
-st.markdown("Explore os dados da avaliação AV7. Utilize os filtros para refinar a visualização dos dados.")
+st.title("⚔️ Análise Head to Head")
+st.markdown("Explore os dados da Ánalise Head to Head. Utilize os filtros para refinar a visualização dos dados.")
 
 if "merged_dataframes" in st.session_state:
     df_av7 = st.session_state["merged_dataframes"].get("av7TratamentoSoja_Avaliacao_Fazenda_Users_Cidade_Estado")
@@ -113,7 +113,7 @@ if "merged_dataframes" in st.session_state:
         col_filtros, col_tabela = st.columns([1.5, 8.5])
 
         with col_filtros:
-            st.markdown("### 🎛️ Filtros")
+            st.markdown("### 🎧 Filtros")
             filtros = {
                 "Microrregiao": "Microrregião",
                 "Estado": "Estado",
@@ -150,7 +150,7 @@ if "merged_dataframes" in st.session_state:
                                 df_final_av7 = df_final_av7[df_final_av7[coluna].isin(selecionados)]
 
         with col_tabela:
-            st.markdown("### 📋 Tabela de Dados - AV7")
+            st.markdown("### 📋 Tabela de Dados Utilizada na análise (AV7)")
             colunas_visiveis = [
                 "Produtor", "Cultivar", "UF", "Plantio", "Colheita", "Index", "populacao", "GM",
                 "Area Parcela", "plts_10m", "Pop_Final", "Umidade (%)",
@@ -196,9 +196,17 @@ if "merged_dataframes" in st.session_state:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
+            
             # 🤜🏻🤛🏻 Análise Head to Head
             st.markdown("---")
             st.markdown("### ⚔️ Análise Head to Head entre Cultivares")
+            st.markdown("""
+            <small>
+            A Análise Head to Head compara o desempenho de dois cultivares em cada local de avaliação. 
+            Ela mostra o número de vitórias, derrotas e empates (diferenças entre -1 e 1 sc/ha), 
+            ajudando a entender qual cultivar teve melhor performance em diferentes condições.
+            </small>
+            """, unsafe_allow_html=True)
 
             if st.button("🔁 Rodar Análise Head to Head"):
                 df_final_av7["Local"] = df_final_av7["Fazenda"] + "_" + df_final_av7["Cidade"]
@@ -223,7 +231,8 @@ if "merged_dataframes" in st.session_state:
                                 continue
 
                             diff = prod_head[0] - prod_check[0]
-                            win = int(diff > 0)
+                            win = int(diff > 1)
+                            draw = int(-1 <= diff <= 1)
 
                             resultados_h2h.append({
                                 "Head": head,
@@ -232,129 +241,119 @@ if "merged_dataframes" in st.session_state:
                                 "Check_Mean": round(prod_check[0], 1),
                                 "Difference": round(diff, 1),
                                 "Number_of_Win": win,
+                                "Is_Draw": draw,
                                 "Percentage_of_Win": 100.0 if win else 0.0,
                                 "Number_of_Comparison": 1,
                                 "Local": local
                             })
 
-                
-                # Atualiza o session_state com Label
                 df_resultado_h2h = pd.DataFrame(resultados_h2h)
                 st.session_state["df_resultado_h2h"] = df_resultado_h2h
                 st.success("✅ Análise concluída!")
 
-
-
-                
-            # 👉 Mostra o resultado se já tiver sido calculado
             if "df_resultado_h2h" in st.session_state:
                 df_resultado_h2h = st.session_state["df_resultado_h2h"]
-                # 📋 Tabela formatada com AgGrid - Head to Head
+
                 from st_aggrid import GridOptionsBuilder, AgGrid
 
                 df_h2h_fmt = df_resultado_h2h.copy()
-
                 gb = GridOptionsBuilder.from_dataframe(df_h2h_fmt)
                 colunas_float = df_h2h_fmt.select_dtypes(include=["float"]).columns
-
                 for col in colunas_float:
                     gb.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
-
                 gb.configure_default_column(cellStyle={'fontSize': '14px'})
                 gb.configure_grid_options(headerHeight=30)
-
-                custom_css = {
-                    ".ag-header-cell-label": {
-                        "font-weight": "bold",
-                        "font-size": "15px",
-                        "color": "black"
-                    }
-                }
-
-                AgGrid(
-                    df_h2h_fmt,
-                    gridOptions=gb.build(),
-                    height=600,
-                    custom_css=custom_css
-                )
-
+                custom_css = {".ag-header-cell-label": {"font-weight": "bold", "font-size": "15px", "color": "black"}}
+                AgGrid(df_h2h_fmt, gridOptions=gb.build(), height=600, custom_css=custom_css)
 
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
                     df_resultado_h2h.to_excel(writer, sheet_name="head_to_head", index=False)
 
                 st.download_button(
-                    label="📥 Baixar Resultado Head to Head",
+                    label="📅 Baixar Resultado Head to Head",
                     data=buffer.getvalue(),
                     file_name="resultado_head_to_head.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-                # 🎯 Seletor de comparação Head to Head
-                st.markdown("## 🎯 Selecione os cultivares para comparação Head to Head")
-
+                st.markdown("### 🔹 Selecione os cultivares para comparação Head to Head")
                 cultivares_unicos = sorted(df_resultado_h2h["Head"].unique())
-
                 col1, col2, col3 = st.columns([0.3, 0.4, 0.3])
 
                 with col1:
                     head_select = st.selectbox("Selecionar Cultivar Head", options=cultivares_unicos, key="head_select")
-
                 with col2:
                     st.markdown("<h1 style='text-align: center;'>X</h1>", unsafe_allow_html=True)
-
                 with col3:
                     check_select = st.selectbox("Selecionar Cultivar Check", options=cultivares_unicos, key="check_select")
 
-                # 🎯 Métricas, Cartões e Gráficos - Comparação 1x1
                 if head_select and check_select and head_select != check_select:
-                    df_selecionado = df_resultado_h2h[
-                        (df_resultado_h2h["Head"] == head_select) &
-                        (df_resultado_h2h["Check"] == check_select)
-                    ]
+                    df_selecionado = df_resultado_h2h[(df_resultado_h2h["Head"] == head_select) & (df_resultado_h2h["Check"] == check_select)]
 
                     num_locais = df_selecionado["Local"].nunique()
-                    vitorias = df_selecionado[df_selecionado["Difference"] > 0].shape[0]
-                    derrotas = df_selecionado[df_selecionado["Difference"] < 0].shape[0]
+                    vitorias = df_selecionado[df_selecionado["Difference"] > 1].shape[0]
+                    derrotas = df_selecionado[df_selecionado["Difference"] < -1].shape[0]
+                    empates = df_selecionado[df_selecionado["Difference"].between(-1, 1)].shape[0]
 
                     max_diff = df_selecionado["Difference"].max() if not df_selecionado.empty else 0
                     min_diff = df_selecionado["Difference"].min() if not df_selecionado.empty else 0
-                    media_diff_vitorias = df_selecionado[df_selecionado["Difference"] > 0]["Difference"].mean() or 0
-                    media_diff_derrotas = df_selecionado[df_selecionado["Difference"] < 0]["Difference"].mean() or 0
+                    media_diff_vitorias = df_selecionado[df_selecionado["Difference"] > 1]["Difference"].mean() or 0
+                    media_diff_derrotas = df_selecionado[df_selecionado["Difference"] < -1]["Difference"].mean() or 0
 
-                    col4, col5, col6 = st.columns(3)
+                   
+                    # ⏹️ Cards de Resultados
+                    col4, col5, col6, col7 = st.columns(4)
+
+                    # 📍 Locais
                     with col4:
                         st.markdown(f"""
                             <div style="background-color:#f2f2f2; padding:15px; border-radius:10px; text-align:center;">
-                                <h5 style="font-weight:bold;">📍 Número de Locais</h5>
-                                <div style="font-size: 20px; color:#f2f2f2;">Max: --</div>
-                                <h2 style="margin: 10px 0; color:#333; font-size: 4em;">{num_locais}</h2>
-                                <div style="font-size: 20px; color:#f2f2f2;">Média: --</div>
+                                <h5 style="font-weight:bold; color:#333;">📍 Número de Locais</h5>
+                                <div style="font-size: 20px; font-weight:bold; color:#f2f2f2;">&nbsp;</div>
+                                <h2 style="margin: 10px 0; color:#333; font-weight:bold; font-size: 4em;">{num_locais}</h2>
+                                <div style="font-size: 20px; font-weight:bold; color:#f2f2f2;">&nbsp;</div>
                             </div>
                         """, unsafe_allow_html=True)
 
+                    # ✅ Vitórias
                     with col5:
                         st.markdown(f"""
-                            <div style="background-color:#d4edda; padding:15px; border-radius:10px; text-align:center;">
-                                <h5 style="font-weight:bold;">✅ Vitórias</h5>
-                                <div style="font-size: 20px; color:#155724;">Max: {max_diff:.1f} sc/ha</div>
-                                <h2 style="margin: 10px 0; color:#155724; font-size: 4em;">{vitorias}</h2>
-                                <div style="font-size: 20px; color:#155724;">Média: {media_diff_vitorias:.1f} sc/ha</div>
+                            <div style="background-color:#01B8AA80; padding:15px; border-radius:10px; text-align:center;">
+                                <h5 style="font-weight:bold; color:#004d47;">✅ Vitórias</h5>
+                                <div style="font-size: 20px; font-weight:bold; color:#004d47;">Max: {max_diff:.1f} sc/ha</div>
+                                <h2 style="margin: 10px 0; color:#004d47; font-weight:bold; font-size: 4em;">{vitorias}</h2>
+                                <div style="font-size: 20px; font-weight:bold; color:#004d47;">Média: {media_diff_vitorias:.1f} sc/ha</div>
                             </div>
                         """, unsafe_allow_html=True)
 
+                    # ➖ Empates
                     with col6:
                         st.markdown(f"""
-                            <div style="background-color:#f8d7da; padding:15px; border-radius:10px; text-align:center;">
-                                <h5 style="font-weight:bold;">❌ Derrotas</h5>
-                                <div style="font-size: 20px; color:#721c24;">Min: {min_diff:.1f} sc/ha</div>
-                                <h2 style="margin: 10px 0; color:#721c24; font-size: 4em;">{derrotas}</h2>
-                                <div style="font-size: 20px; color:#721c24;">Média: {media_diff_derrotas:.1f} sc/ha</div>
+                            <div style="background-color:#F2C80F80; padding:15px; border-radius:10px; text-align:center;">
+                                <h5 style="font-weight:bold; color:#8a7600;">➖ Empates</h5>
+                                <div style="font-size: 20px; font-weight:bold; color:#8a7600;">Entre -1 e 1 sc/ha</div>
+                                <h2 style="margin: 10px 0; color:#8a7600; font-weight:bold; font-size: 4em;">{empates}</h2>
+                                <div style="font-size: 20px; font-weight:bold; color:#F2C80F80;">&nbsp;</div>
                             </div>
                         """, unsafe_allow_html=True)
 
-                    # 📊 Gráfico de Pizza - Resultado Geral do Head
+                    # ❌ Derrotas
+                    with col7:
+                        st.markdown(f"""
+                            <div style="background-color:#FD625E80; padding:15px; border-radius:10px; text-align:center;">
+                                <h5 style="font-weight:bold; color:#7c1f1c;">❌ Derrotas</h5>
+                                <div style="font-size: 20px; font-weight:bold; color:#7c1f1c;">Min: {min_diff:.1f} sc/ha</div>
+                                <h2 style="margin: 10px 0; color:#7c1f1c; font-weight:bold; font-size: 4em;">{derrotas}</h2>
+                                <div style="font-size: 20px; font-weight:bold; color:#7c1f1c;">Média: {media_diff_derrotas:.1f} sc/ha</div>
+                            </div>
+                        """, unsafe_allow_html=True)
 
+
+
+                    st.markdown("")
+                    
+                    # 📊 Gráfico de Pizza
                     col7, col8, col9 = st.columns([1, 2, 1])
                     with col8:
                         st.markdown("""
@@ -364,9 +363,9 @@ if "merged_dataframes" in st.session_state:
                         """, unsafe_allow_html=True)
 
                         fig = go.Figure(data=[go.Pie(
-                            labels=["Vitórias", "Derrotas"],
-                            values=[vitorias, derrotas],
-                            marker=dict(colors=["#10CF9B", "#F44336"]),  # 💚 Verde e ❤️ Vermelho no padrão
+                            labels=["Vitórias", "Empates", "Derrotas"],
+                            values=[vitorias, empates, derrotas],
+                            marker=dict(colors=["#01B8AA", "#F2C80F", "#FD625E"]),
                             hole=0.6,
                             textinfo='label+percent',
                             textposition='outside',
@@ -378,40 +377,19 @@ if "merged_dataframes" in st.session_state:
                         st.markdown("</div>", unsafe_allow_html=True)
 
 
-                    df_sorted = df_selecionado.sort_values(by="Difference")
-                    cores = df_sorted["Difference"].apply(
-                        lambda x: f"rgba(0, 128, 0, {min(1, abs(x)/10)})" if x > 0 else f"rgba(220, 20, 60, {min(1, abs(x)/10)})"
-                    ).tolist()
+                # Comparacao Multichecks
+                st.markdown("### 🔹 Comparação Head x Múltiplos Checks")
+                st.markdown("""
+                <small>
+                Essa análise permite comparar um cultivar (Head) com vários outros (Checks) ao mesmo tempo. 
+                Ela apresenta o percentual de vitórias, produtividade média e a diferença média de performance 
+                em relação aos demais cultivares selecionados.
+                </small>
+                """, unsafe_allow_html=True)
 
-                    fig_bar = go.Figure()
-                    fig_bar.add_trace(go.Bar(
-                        x=df_sorted["Local"],
-                        y=df_sorted["Difference"],
-                        marker_color=cores,
-                        text=df_sorted["Difference"].round(1),
-                        textposition="outside",
-                        textfont=dict(size=20, color="black", family="Arial Black")
-                    ))
-
-                    fig_bar.update_layout(
-                        title=dict(text="Diferença por Local", font=dict(size=20, color="black", family="Arial Black")),
-                        xaxis=dict(title=dict(text="Local", font=dict(size=20, color="black", family="Arial Black")), tickfont=dict(size=20, color="black", family="Arial Black")),
-                        yaxis=dict(title=dict(text="Diferença (sc/ha)", font=dict(size=20, color="black", family="Arial Black")), tickfont=dict(size=20, color="black", family="Arial Black")),
-                        height=800,
-                        margin=dict(t=50, b=80),
-                        showlegend=False,
-                        bargap=0.25
-                    )
-
-                    st.plotly_chart(fig_bar, use_container_width=True)
-
-                # 🌟 Comparacao Head com Multiplos Checks - SEPARADO e SEM depender da selecao 1x1
-                st.markdown("### 📊 Comparacao do Head com Multiplos Checks")
-
-                cultivares_unicos = sorted(df_resultado_h2h["Head"].unique())
-                head_unico = st.selectbox("Selecione o Cultivar Head (referência)", options=cultivares_unicos, key="multi_head")
+                head_unico = st.selectbox("Cultivar Head", options=cultivares_unicos, key="multi_head")
                 opcoes_checks = [c for c in cultivares_unicos if c != head_unico]
-                checks_selecionados = st.multiselect("Selecione os Cultivares Check para comparação", options=opcoes_checks, key="multi_checks")
+                checks_selecionados = st.multiselect("Cultivares Check", options=opcoes_checks, key="multi_checks")
 
                 if head_unico and checks_selecionados:
                     df_multi = df_resultado_h2h[
@@ -440,19 +418,12 @@ if "merged_dataframes" in st.session_state:
                         resumo = resumo[["Cultivar Check", "% Vitórias", "Num_Locais", "Prod_sc_ha_media", "Diferença Média"]]
 
                         col_tabela, col_grafico = st.columns([1.3, 1.7])
-
                         with col_tabela:
                             st.markdown("### 📊 Tabela Comparativa")
                             gb = GridOptionsBuilder.from_dataframe(resumo)
                             gb.configure_default_column(cellStyle={'fontSize': '14px'})
                             gb.configure_grid_options(headerHeight=30)
-                            custom_css = {
-                                ".ag-header-cell-label": {
-                                    "font-weight": "bold",
-                                    "font-size": "15px",
-                                    "color": "black"
-                                }
-                            }
+                            custom_css = {".ag-header-cell-label": {"font-weight": "bold", "font-size": "15px", "color": "black"}}
                             AgGrid(resumo, gridOptions=gb.build(), height=400, custom_css=custom_css)
 
                             buffer = io.BytesIO()
@@ -468,6 +439,11 @@ if "merged_dataframes" in st.session_state:
 
                         with col_grafico:
                             fig_diff = go.Figure()
+                            # Define as cores de acordo com a regra: vitória, empate, derrota
+                            cores_personalizadas = resumo["Diferença Média"].apply(
+                                lambda x: "#01B8AA" if x > 1 else "#FD625E" if x < -1 else "#F2C80F"
+                            )
+
                             fig_diff.add_trace(go.Bar(
                                 y=resumo["Cultivar Check"],
                                 x=resumo["Diferença Média"],
@@ -475,7 +451,7 @@ if "merged_dataframes" in st.session_state:
                                 text=resumo["Diferença Média"].round(1),
                                 textposition="outside",
                                 textfont=dict(size=16, family="Arial Black", color="black"),
-                                marker_color=resumo["Diferença Média"].apply(lambda x: "green" if x > 0 else "crimson")
+                                marker_color=cores_personalizadas
                             ))
 
                             fig_diff.update_layout(
@@ -490,6 +466,8 @@ if "merged_dataframes" in st.session_state:
                             st.plotly_chart(fig_diff, use_container_width=True)
                     else:
                         st.info("❓ Nenhuma comparação disponível com os Checks selecionados.")
+
+
 
 
 
