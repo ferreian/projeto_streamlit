@@ -5,19 +5,15 @@ import plotly.graph_objects as go
 from scipy.stats import gaussian_kde
 import numpy as np
 
-
 st.title("🎲 Ciclo dos Cultivares (AV6)")
-st.markdown("Explore o ciclo dos cultivaes nas faixas avaliadas. Aplique filtros para visualizar os dados conforme necessário.")
+st.markdown("Explore o ciclo dos cultivares nas faixas avaliadas. Aplique filtros para visualizar os dados conforme necessário.")
 
-# ✅ Verifica se df_av2 está carregado
 if "merged_dataframes" in st.session_state:
     df_av6 = st.session_state["merged_dataframes"].get("av6TratamentoSoja_Avaliacao_Fazenda_Users_Cidade_Estado")
 
     if df_av6 is not None and not df_av6.empty:
-        df_ciclo = df_av6.copy()       
+        df_ciclo = df_av6.copy()
 
-        
-        # Renomeia colunas
         df_ciclo = df_ciclo.rename(columns={
             "nomeFazenda": "Fazenda",
             "nomeProdutor": "Produtor",
@@ -33,54 +29,48 @@ if "merged_dataframes" in st.session_state:
             "gmVisual": "GM_obs",
             "dataMaturacaoFisiologica": "MAT",
             "nivelAcamenamento": "AC",
-            "aberturaVagens":"ABV",
-            "qualidadeFinalPlot":"QF",
-            "nome": "Cultivar",            
+            "aberturaVagens": "ABV",
+            "qualidadeFinalPlot": "QF",
+            "nome": "Cultivar",
             "cidadeRef": "CidadeRef",
             "fazendaRef": "FazendaRef",
             "displayName": "DTC"
         })
 
-        # 🔧 Tratamento: AC e ABV → 9 se vazios ou 0
+
+        # 🔢 Corrige GM para inteiro (sem casas decimais)
+        if "GM" in df_ciclo.columns:
+            df_ciclo["GM"] = pd.to_numeric(df_ciclo["GM"], errors="coerce").round().astype("Int64")
+
+
+
         for col in ["AC", "ABV"]:
-            df_ciclo[col] = pd.to_numeric(df_ciclo[col], errors="coerce")
-            df_ciclo[col] = df_ciclo[col].fillna(0)
-            df_ciclo[col] = df_ciclo[col].apply(lambda x: 9 if x == 0 else x)
-            df_ciclo[col] = df_ciclo[col].astype(int)
+            df_ciclo[col] = pd.to_numeric(df_ciclo[col], errors="coerce").fillna(0)
+            df_ciclo[col] = df_ciclo[col].apply(lambda x: 9 if x == 0 else x).astype(int)
 
-
-
-        # 🔁 Converte colunas de data do formato timestamp (segundos) para datetime com validação
         for col in ["Plantio", "Colheita", "MAT"]:
+            col_aux = col + "_aux"
             if col in df_ciclo.columns:
-                # Converte para numérico
-                df_ciclo[col] = pd.to_numeric(df_ciclo[col], errors="coerce")
+                df_ciclo[col_aux] = pd.to_numeric(df_ciclo[col], errors="coerce")
+                df_ciclo.loc[
+                    (df_ciclo[col_aux] < 946684800) | (df_ciclo[col_aux] > 4102444800), col_aux
+                ] = pd.NaT
+                df_ciclo[col_aux] = pd.to_datetime(df_ciclo[col_aux], unit="s", errors="coerce")
 
-        # Filtra valores razoáveis (ex: entre 946684800 e 1893456000, que corresponde a anos entre 2000 e 2030)
-        df_ciclo[col] = df_ciclo[col].where(df_ciclo[col].between(946684800, 1893456000), np.nan)
+        df_ciclo["Ciclo_dias"] = (df_ciclo["MAT_aux"] - df_ciclo["Plantio_aux"]).dt.days + 5
 
-        # Converte para datetime
-        df_ciclo[col] = pd.to_datetime(df_ciclo[col], unit="s", errors="coerce")
-        df_ciclo[col] = df_ciclo[col].dt.strftime("%d/%m/%Y")
+        for col in ["Plantio_aux", "Colheita_aux", "MAT_aux"]:
+            col_original = col.replace("_aux", "")
+            df_ciclo[col_original] = df_ciclo[col].dt.strftime("%d/%m/%Y")
 
-
-
-        # 🧮 Calcula o ciclo em dias (diferença entre MAT e Plantio - 5 dias)
-        df_ciclo["Plantio_dt"] = pd.to_datetime(df_ciclo["Plantio"], format="%d/%m/%Y", errors="coerce")
-        df_ciclo["MAT_dt"] = pd.to_datetime(df_ciclo["MAT"], format="%d/%m/%Y", errors="coerce")
-        df_ciclo["Ciclo_dias"] = (df_ciclo["MAT_dt"] - df_ciclo["Plantio_dt"]).dt.days + 5
-
-        df_ciclo.drop(columns=["Plantio_dt", "MAT_dt"], inplace=True)
-
-
-
-
+        df_ciclo.drop(columns=["Plantio_aux", "Colheita_aux", "MAT_aux"], inplace=True)
 
         df_ciclo = df_ciclo[df_ciclo["Teste"] == "Faixa"]
-
-        # Normaliza texto
         df_ciclo["Produtor"] = df_ciclo["Produtor"].astype(str).str.upper()
         df_ciclo["Fazenda"] = df_ciclo["Fazenda"].astype(str).str.upper()
+
+        
+
 
         # 🔍 Layout com filtros
         col_filtros, col_tabela = st.columns([1.5, 8.5])
@@ -176,6 +166,7 @@ if "merged_dataframes" in st.session_state:
             from st_aggrid import AgGrid, GridOptionsBuilder
 
             df_fmt = df_ciclo[colunas_visiveis].copy()
+            df_fmt["GM"] = pd.to_numeric(df_fmt["GM"], errors="coerce").round().astype("Int64")
 
             # Substituições nos nomes das cultivares
             substituicoes = {
@@ -189,6 +180,10 @@ if "merged_dataframes" in st.session_state:
 
             gb = GridOptionsBuilder.from_dataframe(df_fmt)
 
+            # ✅ Corrige exibição da GM sem decimal
+            gb.configure_column("GM", type=["numericColumn"], valueFormatter="x.toFixed(0)")
+
+            # Demais colunas numéricas
             colunas_float = df_fmt.select_dtypes(include=["float", "int"]).columns
             for col in colunas_float:
                 if col in ["GM_obs", "Ciclo_dias"]:
@@ -197,12 +192,13 @@ if "merged_dataframes" in st.session_state:
                         type=["numericColumn"],
                         valueFormatter="x.toFixed(0)"  # Inteiro
                     )
-                else:
+                elif col != "GM":  # 👈 Evita sobrescrever a GM
                     gb.configure_column(
                         field=col,
                         type=["numericColumn"],
                         valueFormatter="x.toFixed(1)"  # Float com 1 casa
                     )
+
 
             gb.configure_default_column(cellStyle={'fontSize': '14px'})
             gb.configure_grid_options(headerHeight=30)
