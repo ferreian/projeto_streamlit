@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-st.title("📊 Avaliação de Doenças")
+st.title("📊 Avaliação de Doenças (AV2)")
 st.markdown("Explore as notas de doenças em faixas avaliadas. Aplique filtros para visualizar os dados conforme necessário.")
 
 # ✅ Verifica se df_av2 está carregado
@@ -139,7 +139,7 @@ if "merged_dataframes" in st.session_state:
                 "Cultivar", "GM", "Index"
             ]]
 
-            st.markdown("### 📋 Tabela de Doenças")
+            st.markdown("### 📋 Tabela de Doenças (AV2)")
 
             from st_aggrid import AgGrid, GridOptionsBuilder
 
@@ -300,7 +300,7 @@ if "merged_dataframes" in st.session_state:
                     }
                     df_mostrar["Cultivar"] = df_mostrar["Cultivar"].replace(substituicoes)
 
-                    st.markdown("### 📈 Resumo por Cultivar (Média, Mínimo, Máximo e Incidência %)")
+                    st.markdown("### 📊 Resumo por Cultivar (Média, Mínimo, Máximo e Incidência %)")
 
                     # ⬇️ Continua com o AgGrid normalmente
                     from st_aggrid import AgGrid, GridOptionsBuilder

@@ -20,7 +20,7 @@ st.title("🎲 Avaliações de Soja")
 st.subheader("👏🏻👏🏻 Bem-vindo ao **JAUM** Análise de Dados")
 st.divider()
 
-st.markdown("## 🌱 JAUM – Jornada de Avaliação Unificada de Materiais")
+st.markdown("## 🌱 JAUM ")
 
 st.markdown("""
 **O que é o JAUM?**  
@@ -183,7 +183,7 @@ if "dataframes" in st.session_state:
     st.session_state["merged_dataframes"] = merged_dataframes_estado
 
     # Exibir os dados mesclados com estado
-    with st.expander("🔹 Base de dados sem tratamento"):
+    with st.expander("🔹 Base de dados - avaliações realizadas"):
         st.subheader("📄 Visualização dos Dados carregados")
 
         df_merged_selectbox = st.selectbox(

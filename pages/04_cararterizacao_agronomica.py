@@ -56,10 +56,10 @@ if "merged_dataframes" in st.session_state:
                 "Estado": "Estado",
                 "Cidade": "Cidade",
                 "Fazenda": "Fazenda",
-                "Cultivar": "Cultivar",
-                "GM": "GM"
+                "Cultivar": "Cultivar"
             }
 
+            # Filtros com expander
             for coluna, label in filtros.items():
                 if coluna in df_caract.columns:
                     with st.expander(label):
@@ -71,6 +71,28 @@ if "merged_dataframes" in st.session_state:
                                 selecionados.append(op)
                         if selecionados:
                             df_caract = df_caract[df_caract[coluna].isin(selecionados)]
+
+            # Slider de GM por último (fora do expander)
+            if "GM" in df_caract.columns:
+                gm_min = int(df_caract["GM"].min())
+                gm_max = int(df_caract["GM"].max())
+
+                
+                if gm_min < gm_max:
+                    gm_range = st.slider(
+                        "Selecione o intervalo de GM",
+                        min_value=gm_min,
+                        max_value=gm_max,
+                        value=(gm_min, gm_max),
+                        step=1
+                    )
+                    df_caract = df_caract[df_caract["GM"].between(gm_range[0], gm_range[1])]
+                else:
+                    st.info(f"Grupo de Maturação disponível: **{gm_min}**")
+
+
+
+
 
         
 
@@ -216,99 +238,147 @@ if "merged_dataframes" in st.session_state:
             )
 
 
-
             # ====================== 📊 Resumo por Cultivar – Número de Vagens ======================
             import io
             import numpy as np
+            import pandas as pd
+            from st_aggrid import AgGrid, GridOptionsBuilder
 
-            # Substitui 0 por NaN para ignorar nos cálculos de média
+            st.markdown("### 📊 Resumo de Caracterização por Cultivar (Número de Vagens por Planta)")
+
+            # Substitui 0 por NaN
             colunas_vagens = ["NV_TS_medio", "NV_TM_media", "NV_TI_media"]
             df_caract[colunas_vagens] = df_caract[colunas_vagens].replace(0, np.nan)
 
-            # Agrupa por cultivar e calcula média ignorando NaN
+            # Agrupa e calcula a média
             df_resumo_vagens = df_caract.groupby("Cultivar").agg(
                 GM=("GM", "first"),
                 **{col: (col, "mean") for col in colunas_vagens}
             ).reset_index()
 
-            # ➕ Recalcula NV_media como soma das médias dos terços
-            df_resumo_vagens["NV_media"] = (
+            # Soma dos terços = total por planta
+            df_resumo_vagens["NV_total"] = (
                 df_resumo_vagens["NV_TS_medio"] +
                 df_resumo_vagens["NV_TM_media"] +
                 df_resumo_vagens["NV_TI_media"]
             ).round(2)
 
-            # Calcula percentuais apenas se NV_media > 0 e não nulo
+            # Percentuais (%)
             df_resumo_vagens["NV_TS_perc"] = df_resumo_vagens.apply(
-                lambda row: round((row["NV_TS_medio"] / row["NV_media"]) * 100, 2)
-                if pd.notnull(row["NV_media"]) and row["NV_media"] > 0 else None,
+                lambda row: round((row["NV_TS_medio"] / row["NV_total"]) * 100, 2)
+                if pd.notnull(row["NV_total"]) and row["NV_total"] > 0 else None,
                 axis=1
             )
             df_resumo_vagens["NV_TM_perc"] = df_resumo_vagens.apply(
-                lambda row: round((row["NV_TM_media"] / row["NV_media"]) * 100, 2)
-                if pd.notnull(row["NV_media"]) and row["NV_media"] > 0 else None,
+                lambda row: round((row["NV_TM_media"] / row["NV_total"]) * 100, 2)
+                if pd.notnull(row["NV_total"]) and row["NV_total"] > 0 else None,
                 axis=1
             )
             df_resumo_vagens["NV_TI_perc"] = df_resumo_vagens.apply(
-                lambda row: round((row["NV_TI_media"] / row["NV_media"]) * 100, 2)
-                if pd.notnull(row["NV_media"]) and row["NV_media"] > 0 else None,
+                lambda row: round((row["NV_TI_media"] / row["NV_total"]) * 100, 2)
+                if pd.notnull(row["NV_total"]) and row["NV_total"] > 0 else None,
                 axis=1
             )
 
+            # Renomeia indicadores
+            renomear = {
+                "NV_TS_medio": "NV_TS",
+                "NV_TM_media": "NV_TM",
+                "NV_TI_media": "NV_TI"
+            }
+            df_resumo_vagens = df_resumo_vagens.rename(columns=renomear)
 
-            # Formata com AgGrid
-            from st_aggrid import AgGrid, GridOptionsBuilder
+            # 🔄 Pivot: indicadores como linhas
+            df_vagens_long = df_resumo_vagens.melt(
+                id_vars=["Cultivar"],
+                value_vars=[
+                    "NV_TS", "NV_TS_perc",
+                    "NV_TM", "NV_TM_perc",
+                    "NV_TI", "NV_TI_perc",
+                    "NV_total"
+                ],
+                var_name="Indicador",
+                value_name="Valor"
+            )
 
-            df_fmt_vagens = df_resumo_vagens.copy()
-            gb_vagens = GridOptionsBuilder.from_dataframe(df_fmt_vagens)
+            # Pivot final
+            df_vagens_pivot = df_vagens_long.pivot_table(
+                index="Indicador",
+                columns="Cultivar",
+                values="Valor"
+            ).reindex([
+                "NV_TS", "NV_TS_perc",
+                "NV_TM", "NV_TM_perc",
+                "NV_TI", "NV_TI_perc",
+                "NV_total"
+            ]).round(1).reset_index()
 
-            colunas_float = df_fmt_vagens.select_dtypes(include=["float", "float64"]).columns
-            for col in colunas_float:
-                gb_vagens.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
+            # 🎨 Estilo customizado no AgGrid
+            gb = GridOptionsBuilder.from_dataframe(df_vagens_pivot)
 
-            gb_vagens.configure_default_column(cellStyle={'fontSize': '14px'})
-            gb_vagens.configure_grid_options(headerHeight=30)
+            # Estiliza todas as colunas float com 1 casa decimal
+            float_cols = df_vagens_pivot.select_dtypes(include=["float", "float64"]).columns
+            for col in float_cols:
+                gb.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
 
+            # Tamanho da fonte e altura do cabeçalho
+            gb.configure_default_column(cellStyle={'fontSize': '14px'})
+            gb.configure_grid_options(headerHeight=30)
+
+            # CSS extra (percentuais em cinza claro, total em negrito)
             custom_css = {
                 ".ag-header-cell-label": {
                     "font-weight": "bold",
                     "font-size": "15px",
                     "color": "black"
+                },
+                ".ag-row:first-child .ag-cell, .ag-row:nth-child(3) .ag-cell, .ag-row:nth-child(5) .ag-cell": {
+                    "background-color": "#f0f0f0"
+                },
+                ".ag-row:last-child .ag-cell": {
+                    "font-weight": "bold"
                 }
             }
 
+            # Exibe com AgGrid
             AgGrid(
-                df_fmt_vagens,
-                gridOptions=gb_vagens.build(),
-                height=500,
+                df_vagens_pivot,
+                gridOptions=gb.build(),
+                height=250,
                 custom_css=custom_css,
                 use_container_width=True
             )
 
+
             # 📝 Legenda
-            st.markdown("""ℹ️ **Legenda**:**NV_TS_medio**: Número médio de vagens no terço superior;**NV_TM_media**: Número médio de vagens no terço médio;
-            **NV_TI_media**: Número médio de vagens no terço inferior; **NV_media**: Total de vagens por planta ;
-            **NV_1G**: Número médio de grãos por vagem no terço superior; **NV_2G**: Número médio de grãos por vagem no terço médio;            
+            st.markdown("""
+            ℹ️ **Legenda**
+            - **NV_TS**: Nº médio de vagens no terço superior  
+            - **NV_TS_perc**: % de vagens no terço superior  
+            - **NV_TM**: Nº médio de vagens no terço médio  
+            - **NV_TM_perc**: % de vagens no terço médio  
+            - **NV_TI**: Nº médio de vagens no terço inferior  
+            - **NV_TI_perc**: % de vagens no terço inferior  
+            - **NV_total**: Total médio de vagens por planta
             """)
 
-            # 📥 Botão de exportação para Excel
+
+            # 📥 Exportar Excel
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                df_fmt_vagens.to_excel(writer, index=False, sheet_name="resumo_vagens")
+                df_vagens_pivot.to_excel(writer, index=False, sheet_name="resumo_vagens_pivot")
 
             st.download_button(
-                label="📥 Baixar Resumo de Vagens",
+                label="📥 Baixar Resumo de Vagens (Pivotado)",
                 data=output.getvalue(),
-                file_name="resumo_vagens.xlsx",
+                file_name="resumo_vagens_pivotado.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-
-            
             # ====================== 📊 Resumo por Cultivar – Número de Grãos por Vagem ======================
             st.markdown("### 📊 Resumo de Caracterização por Cultivar (Número de Grãos por Vagem)")
 
-            # Substitui 0 por NaN nos cálculos
+            # Substitui 0 por NaN
             colunas_graos = [
                 "NV_TS_1G", "NV_TS_2G", "NV_TS_3G", "NV_TS_4G",
                 "NV_TM_1G", "NV_TM_2G", "NV_TM_3G", "NV_TM_4G",
@@ -316,99 +386,128 @@ if "merged_dataframes" in st.session_state:
             ]
             df_caract[colunas_graos] = df_caract[colunas_graos].replace(0, np.nan)
 
-            # Agrupa por cultivar e calcula média
+            # Agrupa e calcula média
             df_resumo_graos = df_caract.groupby("Cultivar").agg(
                 GM=("GM", "first"),
                 **{col: (col, "mean") for col in colunas_graos}
             ).reset_index()
 
-            # 🧮 Recalcula NV_1G a NV_4G como soma dos terços 
-            df_resumo_graos["NV_1G"] = df_resumo_graos[["NV_TS_1G", "NV_TM_1G", "NV_TI_1G"]].sum(axis=1, skipna=True).round(1)
-            df_resumo_graos["NV_2G"] = df_resumo_graos[["NV_TS_2G", "NV_TM_2G", "NV_TI_2G"]].sum(axis=1, skipna=True).round(1)
-            df_resumo_graos["NV_3G"] = df_resumo_graos[["NV_TS_3G", "NV_TM_3G", "NV_TI_3G"]].sum(axis=1, skipna=True).round(1)
-            df_resumo_graos["NV_4G"] = df_resumo_graos[["NV_TS_4G", "NV_TM_4G", "NV_TI_4G"]].sum(axis=1, skipna=True).round(1)
+            # Totais por tipo
+            df_resumo_graos["NV_1G"] = df_resumo_graos[["NV_TS_1G", "NV_TM_1G", "NV_TI_1G"]].sum(axis=1)
+            df_resumo_graos["NV_2G"] = df_resumo_graos[["NV_TS_2G", "NV_TM_2G", "NV_TI_2G"]].sum(axis=1)
+            df_resumo_graos["NV_3G"] = df_resumo_graos[["NV_TS_3G", "NV_TM_3G", "NV_TI_3G"]].sum(axis=1)
+            df_resumo_graos["NV_4G"] = df_resumo_graos[["NV_TS_4G", "NV_TM_4G", "NV_TI_4G"]].sum(axis=1)
 
-            # Percentuais com proteção e multiplicando por 100
-            def calcula_percentual(numerador, denominador):
-                return ((numerador / denominador.replace(0, pd.NA)) * 100).round(1)
+            # Percentuais
+            def calcula_percentual(n, d):
+                return (n / d.replace(0, pd.NA)) * 100
 
-            df_resumo_graos["NV_TS_1G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_1G"], df_resumo_graos["NV_1G"])
-            df_resumo_graos["NV_TM_1G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_1G"], df_resumo_graos["NV_1G"])
-            df_resumo_graos["NV_TI_1G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_1G"], df_resumo_graos["NV_1G"])
+            for g in ["1G", "2G", "3G", "4G"]:
+                for terc in ["TS", "TM", "TI"]:
+                    df_resumo_graos[f"NV_{terc}_{g}_perc"] = calcula_percentual(
+                        df_resumo_graos[f"NV_{terc}_{g}"], df_resumo_graos[f"NV_{g}"]
+                    )
 
-            df_resumo_graos["NV_TS_2G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_2G"], df_resumo_graos["NV_2G"])
-            df_resumo_graos["NV_TM_2G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_2G"], df_resumo_graos["NV_2G"])
-            df_resumo_graos["NV_TI_2G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_2G"], df_resumo_graos["NV_2G"])
+            # 🔄 Arredonda tudo relevante (inclusive %)
+            colunas_gerais = colunas_graos + [
+                "NV_1G", "NV_2G", "NV_3G", "NV_4G"
+            ] + [f"NV_{terc}_{g}_perc" for g in ["1G", "2G", "3G", "4G"] for terc in ["TS", "TM", "TI"]]
 
-            df_resumo_graos["NV_TS_3G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_3G"], df_resumo_graos["NV_3G"])
-            df_resumo_graos["NV_TM_3G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_3G"], df_resumo_graos["NV_3G"])
-            df_resumo_graos["NV_TI_3G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_3G"], df_resumo_graos["NV_3G"])
-
-            df_resumo_graos["NV_TS_4G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_4G"], df_resumo_graos["NV_4G"])
-            df_resumo_graos["NV_TM_4G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_4G"], df_resumo_graos["NV_4G"])
-            df_resumo_graos["NV_TI_4G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_4G"], df_resumo_graos["NV_4G"])
-
-
-            # 🔄 Lista manual das colunas que queremos formatar
-            colunas_formatar = [
-                "NV_TS_1G", "NV_TS_2G", "NV_TS_3G", "NV_TS_4G",
-                "NV_TM_1G", "NV_TM_2G", "NV_TM_3G", "NV_TM_4G",
-                "NV_TI_1G", "NV_TI_2G", "NV_TI_3G", "NV_TI_4G",
-                "NV_1G", "NV_2G", "NV_3G", "NV_4G",
-                "NV_TS_1G_perc", "NV_TM_1G_perc", "NV_TI_1G_perc",
-                "NV_TS_2G_perc", "NV_TM_2G_perc", "NV_TI_2G_perc",
-                "NV_TS_3G_perc", "NV_TM_3G_perc", "NV_TI_3G_perc",
-                "NV_TS_4G_perc", "NV_TM_4G_perc", "NV_TI_4G_perc"
-            ]
-
-            # 🔄 Garante tipo float e arredonda
-            for col in colunas_formatar:
+            for col in colunas_gerais:
                 if col in df_resumo_graos.columns:
-                    df_resumo_graos[col] = pd.to_numeric(df_resumo_graos[col], errors='coerce').round(1)
+                    df_resumo_graos[col] = pd.to_numeric(df_resumo_graos[col], errors="coerce").round(1)
 
-            # 🧾 Cópia do DataFrame para exibição formatada
-            df_fmt_graos = df_resumo_graos.copy()
+            # Indicadores em ordem
+            colunas_indicadores = []
+            for g in ["1G", "2G", "3G", "4G"]:
+                for terc in ["TS", "TM", "TI"]:
+                    colunas_indicadores += [f"NV_{terc}_{g}", f"NV_{terc}_{g}_perc"]
+                colunas_indicadores.append(f"NV_{g}")
 
-            # 🧱 Cria o grid builder
-            gb_graos = GridOptionsBuilder.from_dataframe(df_fmt_graos)
+            # 🚨 Garante que os indicadores realmente existem
+            colunas_indicadores = [col for col in colunas_indicadores if col in df_resumo_graos.columns]
 
-            # 🔢 Aplica formatação nas colunas específicas
-            for col in colunas_formatar:
-                if col in df_fmt_graos.columns:
-                    gb_graos.configure_column(col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
-
-            # 🎨 Estilo das células e cabeçalho
-            gb_graos.configure_default_column(cellStyle={'fontSize': '14px'})
-            gb_graos.configure_grid_options(headerHeight=30)
-
-            # 📊 Exibe com AgGrid
-            AgGrid(
-                df_fmt_graos,
-                gridOptions=gb_graos.build(),
-                height=500,
-                custom_css=custom_css,
-                use_container_width=True
+            # Pivotagem
+            df_long = df_resumo_graos.melt(
+                id_vars=["Cultivar"],
+                value_vars=colunas_indicadores,
+                var_name="Indicador",
+                value_name="Valor"
             )
+            df_pivot = df_long.pivot_table(
+                index="Indicador",
+                columns="Cultivar",
+                values="Valor"
+            ).reindex(colunas_indicadores).reset_index()
 
+            # Verificação extra
+            if df_pivot.empty:
+                st.warning("⚠️ Nenhum dado disponível para exibir a tabela de grãos por vagem.")
+            else:
+                # AgGrid com estilo
+                gb = GridOptionsBuilder.from_dataframe(df_pivot)
 
+                for col in df_pivot.select_dtypes(include=["float", "float64"]).columns:
+                    gb.configure_column(col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
 
+                gb.configure_default_column(cellStyle={'fontSize': '14px'})
+                gb.configure_grid_options(headerHeight=30)
 
-            # 📥 Exportar (Grãos)
-            output_graos = io.BytesIO()
-            with pd.ExcelWriter(output_graos, engine="xlsxwriter") as writer:
-                df_resumo_graos.to_excel(writer, index=False, sheet_name="resumo_graos")
+                # Estilo CSS para linhas destacadas
+                custom_css_graos = {
+                    ".ag-header-cell-label": {
+                        "font-weight": "bold",
+                        "font-size": "15px",
+                        "color": "black"
+                    },
+                    ".ag-row .ag-cell": {
+                        "font-size": "14px"
+                    },
+                    ".ag-row:nth-child(2n) .ag-cell": {
+                        "background-color": "#f9f9f9"
+                    }
+                }
 
-            st.download_button(
-                label="📥 Baixar Resumo (Grãos por Vagem)",
-                data=output_graos.getvalue(),
-                file_name="resumo_cultivar_graos.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+                for idx, indicador in enumerate(df_pivot["Indicador"]):
+                    if "_perc" in indicador:
+                        custom_css_graos[f".ag-center-cols-container .ag-row[row-index='{idx}'] .ag-cell"] = {
+                            "background-color": "#f0f0f0"
+                        }
+                    elif indicador in ["NV_1G", "NV_2G", "NV_3G", "NV_4G"]:
+                        custom_css_graos[f".ag-center-cols-container .ag-row[row-index='{idx}'] .ag-cell"] = {
+                            "font-weight": "bold"
+                        }
 
+                AgGrid(
+                    df_pivot,
+                    gridOptions=gb.build(),
+                    height=600,
+                    custom_css=custom_css_graos,
+                    use_container_width=True
+                )
 
+                # 📥 Exportar Excel
+                output_graos = io.BytesIO()
+                with pd.ExcelWriter(output_graos, engine="xlsxwriter") as writer:
+                    df_resumo_graos.to_excel(writer, index=False, sheet_name="resumo_graos")
 
-            # 📊 Visualizar Gráfico - Percentual de Vagens por Terço da Planta    
+                st.download_button(
+                    label="📥 Baixar Resumo (Grãos por Vagem)",
+                    data=output_graos.getvalue(),
+                    file_name="resumo_cultivar_graos.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+                # 📝 Legenda
+                st.markdown("""
+                ℹ️ **Legenda**  
+                - **NV_XX_1G a NV_XX_4G**: Número médio de grãos por vagem por terço da planta (TS - Superior, TM - Médio, TI - Inferior)  
+                - **_perc**: Percentual em relação ao total daquele grupo  
+                - **NV_1G a NV_4G**: Total médio de grãos por vagem com 1 a 4 grãos  
+                """)
+
             
+            # 📊 Visualizar Gráfico - Percentual de Vagens por Terço da Planta    
             with st.expander("📊 Visualizar Gráfico - Distribuição Percentual de Vagens por Terço"):
                 import plotly.express as px
 
@@ -432,9 +531,9 @@ if "merged_dataframes" in st.session_state:
 
                 # 🌈 Cores claras personalizadas
                 cores_personalizadas = {
-                    "Terço Superior": "#6EC1E4",  # azul claro
-                    "Terço Médio": "#A5D6A7",     # verde claro
-                    "Terço Inferior": "#F48FB1"   # rosa claro
+                    "Terço Superior": "#81D4FA",  # Azul claro
+                    "Terço Médio": "#4FC3F7",     # Azul médio
+                    "Terço Inferior": "#29B6F6"   # Azul escuro
                 }
 
                 # 🎯 Gráfico
@@ -451,1438 +550,343 @@ if "merged_dataframes" in st.session_state:
                 fig.update_traces(
                     texttemplate='<b>%{text:.1f}%</b>',
                     textposition='outside',
-                    textfont=dict(size=16, family="Arial", color="black")
+                    textfont=dict(size=20, family="Arial", color="black")
                 )
 
                 fig.update_layout(
-                    title="Distribuição Percentual de Vagens por Terço",
+                    title="<b>Distribuição Percentual de Vagens por Terço</b>",
                     title_font=dict(family="Arial", size=20, color="black"),
                     xaxis=dict(
-                        title=dict(text="Cultivar", font=dict(family="Arial", size=16, color="black")),
-                        tickfont=dict(family="Arial", size=16, color="black"),
+                        title=dict(text="<b>Cultivar</b>", font=dict(family="Arial", size=20, color="black")),
+                        tickfont=dict(family="Arial", size=20, color="black"),
                         tickangle=-45
                     ),
                     yaxis=dict(
-                        visible=False,
+                        title=dict(text="<b>Percentual (%)</b>", font=dict(family="Arial", size=20, color="black")),
+                        tickfont=dict(family="Arial", size=20, color="black"),
                         range=[0, 100]
                     ),
                     bargap=0.25,
                     height=500,
-                    legend_title_text=""
+                    legend_title_text="",
+                    legend=dict(font=dict(size=20, family="Arial", color="black"))
                 )
 
                 st.plotly_chart(fig, use_container_width=True)
+      
 
 
+            # 📊 Gráfico único: Percentual de Vagens com 4 Grãos por Terço (TS, TM, TI)
+            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 4 Grãos por Terço da Planta"):
+                # Prepara o dataframe no formato longo
+                df_4g = df_resumo_graos[["Cultivar", "NV_TS_4G_perc", "NV_TM_4G_perc", "NV_TI_4G_perc"]].copy()
 
+                df_4g_long = df_4g.melt(
+                    id_vars="Cultivar",
+                    value_vars=["NV_TS_4G_perc", "NV_TM_4G_perc", "NV_TI_4G_perc"],
+                    var_name="Terço",
+                    value_name="Percentual"
+                )
 
+                # Renomeia os terços
+                df_4g_long["Terço"] = df_4g_long["Terço"].map({
+                    "NV_TS_4G_perc": "Terço Superior",
+                    "NV_TM_4G_perc": "Terço Médio",
+                    "NV_TI_4G_perc": "Terço Inferior"
+                })
 
-
-
-
-
-
-
-
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade no Terço Superior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens no Terço Superior"):
                 fig = px.bar(
-                    df_resumo_vagens,
+                    df_4g_long,
                     x="Cultivar",
-                    y="NV_TS_perc",
-                    text="NV_TS_perc",
-                    labels={"NV_TS_perc": "% Vagens - TS"},
-                    title="Percentual de Vagens no Terço Superior (%)",
-                    color_discrete_sequence=["lightblue"]
+                    y="Percentual",
+                    color="Terço",
+                    barmode="group",
+                    text="Percentual",
+                    color_discrete_map={
+                        "Terço Superior": "#81D4FA",
+                        "Terço Médio": "#4FC3F7",
+                        "Terço Inferior": "#29B6F6"
+                    },
+                    title="<b>Percentual de Vagens com 4 Grãos por Terço da Planta (%)</b>"
                 )
 
                 fig.update_traces(
-                    texttemplate='%{text:.1f}%',
+                    texttemplate='<b>%{text:.1f}%</b>',
                     textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
+                    textfont=dict(size=20, family="Arial", color="black")
                 )
 
                 fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
+                    title_font=dict(family="Arial", size=20, color="black"),
                     xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
+                        title=dict(text="<b>Cultivar</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
+                        tickangle=-45
                     ),
                     yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
+                        title=dict(text="<b>Percentual (%)</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
                         range=[0, 100]
                     ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
+                    bargap=0.25,
+                    height=500,
+                    legend_title_text="",
+                    legend=dict(font=dict(size=20, family="Arial", color="black"))
                 )
 
-                fig.update_xaxes(tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
-            
-            # 📊 Gráfico de barras - Caracterização de Produtividade no Terço Médio
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens no Terço Médio"):
+
+
+
+            # 📊 Gráfico único: Percentual de Vagens com 3 Grãos por Terço (TS, TM, TI)
+            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 3 Grãos por Terço da Planta"):
+                # Prepara o dataframe no formato longo
+                df_3g = df_resumo_graos[["Cultivar", "NV_TS_3G_perc", "NV_TM_3G_perc", "NV_TI_3G_perc"]].copy()
+
+                df_3g_long = df_3g.melt(
+                    id_vars="Cultivar",
+                    value_vars=["NV_TS_3G_perc", "NV_TM_3G_perc", "NV_TI_3G_perc"],
+                    var_name="Terço",
+                    value_name="Percentual"
+                )
+
+                # Renomeia os terços
+                df_3g_long["Terço"] = df_3g_long["Terço"].map({
+                    "NV_TS_3G_perc": "Terço Superior",
+                    "NV_TM_3G_perc": "Terço Médio",
+                    "NV_TI_3G_perc": "Terço Inferior"
+                })
+
+                # Cria o gráfico
                 fig = px.bar(
-                    df_resumo_vagens,
+                    df_3g_long,
                     x="Cultivar",
-                    y="NV_TM_perc",
-                    text="NV_TM_perc",
-                    labels={"NV_TM_perc": "% Vagens - TM"},
-                    title="Percentual de Vagens no Terço Médio (%)",
-                    color_discrete_sequence=["lightblue"]
+                    y="Percentual",
+                    color="Terço",
+                    barmode="group",
+                    text="Percentual",
+                    color_discrete_map={
+                        "Terço Superior": "#81D4FA",
+                        "Terço Médio": "#4FC3F7",
+                        "Terço Inferior": "#29B6F6"
+                    },
+                    title="<b>Percentual de Vagens com 3 Grãos por Terço da Planta (%)</b>"
                 )
 
                 fig.update_traces(
-                    texttemplate='%{text:.1f}%',
+                    texttemplate='<b>%{text:.1f}%</b>',
                     textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
+                    textfont=dict(size=20, family="Arial", color="black")
                 )
 
                 fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
+                    title_font=dict(family="Arial", size=20, color="black"),
                     xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
+                        title=dict(text="<b>Cultivar</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
+                        tickangle=-45
                     ),
                     yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
+                        title=dict(text="<b>Percentual (%)</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
                         range=[0, 100]
                     ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
+                    bargap=0.25,
+                    height=500,
+                    legend_title_text="",
+                    legend=dict(font=dict(size=20, family="Arial", color="black"))
                 )
 
-                fig.update_xaxes(tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
 
-            # 📊 Gráfico de barras - Caracterização de Produtividade no Terço Inferior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens no Terço Inferior"):
-                fig = px.bar(
-                    df_resumo_vagens,
-                    x="Cultivar",
-                    y="NV_TI_perc",
-                    text="NV_TI_perc",
-                    labels={"NV_TI_perc": "% Vagens - TI"},
-                    title="Percentual de Vagens no Terço Inferior (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            
-            # ====================== 📊 Resumo por Cultivar – Número de Grãos por Vagem ======================
-            st.markdown("### 📊 Resumo de Caracterização por Cultivar (Número de Grão por Vagem)")
-
-            colunas_graos = [
-                "NV_TS_1G", "NV_TS_2G", "NV_TS_3G", "NV_TS_4G",
-                "NV_TM_1G", "NV_TM_2G", "NV_TM_3G", "NV_TM_4G",
-                "NV_TI_1G", "NV_TI_2G", "NV_TI_3G", "NV_TI_4G",
-                "NV_1G", "NV_2G", "NV_3G", "NV_4G"
-            ]
-
-            df_resumo_graos = df_caract.groupby("Cultivar").agg(
-                GM=("GM", "first"),
-                **{col: (col, "mean") for col in colunas_graos}
-            ).round(2).reset_index()
-
-            # ➕ Cálculo das porcentagens (ignorando divisões por zero ou NaN)
-            def calcula_percentual(numerador, denominador):
-                return (numerador / denominador.replace(0, pd.NA)).round(2)
-
-            df_resumo_graos["NV_TS_1G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_1G"], df_resumo_graos["NV_1G"])
-            df_resumo_graos["NV_TM_1G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_1G"], df_resumo_graos["NV_1G"])
-            df_resumo_graos["NV_TI_1G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_1G"], df_resumo_graos["NV_1G"])
-
-            df_resumo_graos["NV_TS_2G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_2G"], df_resumo_graos["NV_2G"])
-            df_resumo_graos["NV_TM_2G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_2G"], df_resumo_graos["NV_2G"])
-            df_resumo_graos["NV_TI_2G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_2G"], df_resumo_graos["NV_2G"])
-
-            df_resumo_graos["NV_TS_3G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_3G"], df_resumo_graos["NV_3G"])
-            df_resumo_graos["NV_TM_3G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_3G"], df_resumo_graos["NV_3G"])
-            df_resumo_graos["NV_TI_3G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_3G"], df_resumo_graos["NV_3G"])
-
-            df_resumo_graos["NV_TS_4G_perc"] = calcula_percentual(df_resumo_graos["NV_TS_4G"], df_resumo_graos["NV_4G"])
-            df_resumo_graos["NV_TM_4G_perc"] = calcula_percentual(df_resumo_graos["NV_TM_4G"], df_resumo_graos["NV_4G"])
-            df_resumo_graos["NV_TI_4G_perc"] = calcula_percentual(df_resumo_graos["NV_TI_4G"], df_resumo_graos["NV_4G"])
-
-
-            # 🧾 Mostra tabela
-            # ✅ Define colunas visíveis (incluindo calculadas)
-
-            colunas_visiveis_graos = [
-                "Cultivar", "GM",
-                "NV_TS_1G", "NV_TS_1G_perc",
-                "NV_TM_1G","NV_TM_1G_perc",
-                "NV_TI_1G","NV_TI_1G_perc",
-                "NV_1G",
-                 
-                "NV_TS_2G", "NV_TS_2G_perc",
-                "NV_TM_2G", "NV_TM_2G_perc",
-                "NV_TI_2G","NV_TI_2G_perc",
-                "NV_2G",
-                  
-
-                "NV_TS_3G","NV_TS_3G_perc",
-                "NV_TM_3G","NV_TM_3G_perc",
-                "NV_TI_3G","NV_TI_3G_perc",
-                "NV_3G",
-                 
-
-                "NV_TS_4G","NV_TS_4G_perc",
-                "NV_TM_4G","NV_TM_4G_perc",
-                "NV_TI_4G","NV_TI_4G_perc",
-                "NV_4G",
-            ]
-
-            # 🔒 Garante que só aparecem colunas que existem
-            colunas_visiveis_graos = [col for col in colunas_visiveis_graos if col in df_resumo_graos.columns]
-
-            # 🧾 Mostra tabela
-            from st_aggrid import AgGrid, GridOptionsBuilder
-
-            df_fmt = df_resumo_graos[colunas_visiveis_graos].copy()
-
-            # Cria o grid builder
-            gb = GridOptionsBuilder.from_dataframe(df_fmt)
-
-            # Aplica formatação para colunas numéricas
-            colunas_float = df_fmt.select_dtypes(include=["float", "float64"]).columns
-            for col in colunas_float:
-                gb.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
-
-            # Fonte da tabela e altura do cabeçalho
-            gb.configure_default_column(cellStyle={'fontSize': '14px'})
-            gb.configure_grid_options(headerHeight=30)
-
-            # CSS para o cabeçalho em negrito e preto
-            custom_css = {
-                ".ag-header-cell-label": {
-                    "font-weight": "bold",
-                    "font-size": "15px",
-                    "color": "black"
-                }
-            }
-
-            # Renderiza a tabela com AgGrid
-            AgGrid(
-                df_fmt,
-                gridOptions=gb.build(),
-                height=500,
-                custom_css=custom_css,
-                use_container_width=True
-            )
-
-
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 4 Grãos no Terço Superior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 4 Grãos no Terço Superior"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_TS_4G_perc",
-                    text="NV_TS_4G_perc",
-                    labels={"NV_TS_4G_perc": "% Vagens 4 Grãos - TS"},
-                    title="Percentual de Vagens com 4 Grãos no Terço Superior (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
            
 
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 3 Grãos no Terço Superior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 3 Grãos no Terço Superior"):
+            # 📊 Gráfico único: Percentual de Vagens com 2 Grãos por Terço (TS, TM, TI)
+            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 2 Grãos por Terço da Planta"):
+                # Prepara o DataFrame no formato longo
+                df_2g = df_resumo_graos[["Cultivar", "NV_TS_2G_perc", "NV_TM_2G_perc", "NV_TI_2G_perc"]].copy()
+
+                df_2g_long = df_2g.melt(
+                    id_vars="Cultivar",
+                    value_vars=["NV_TS_2G_perc", "NV_TM_2G_perc", "NV_TI_2G_perc"],
+                    var_name="Terço",
+                    value_name="Percentual"
+                )
+
+                df_2g_long["Terço"] = df_2g_long["Terço"].map({
+                    "NV_TS_2G_perc": "Terço Superior",
+                    "NV_TM_2G_perc": "Terço Médio",
+                    "NV_TI_2G_perc": "Terço Inferior"
+                })
+
+                # Cria o gráfico agrupado
                 fig = px.bar(
-                    df_resumo_graos,
+                    df_2g_long,
                     x="Cultivar",
-                    y="NV_TS_3G_perc",
-                    text="NV_TS_3G_perc",
-                    labels={"NV_TS_3G_perc": "% Vagens 3 Grãos - TS"},
-                    title="Percentual de Vagens com 3 Grãos no Terço Superior (%)",
-                    color_discrete_sequence=["lightblue"]
+                    y="Percentual",
+                    color="Terço",
+                    barmode="group",
+                    text="Percentual",
+                    color_discrete_map={
+                        "Terço Superior": "#81D4FA",
+                        "Terço Médio": "#4FC3F7",
+                        "Terço Inferior": "#29B6F6"
+                    },
+                    title="<b>Percentual de Vagens com 2 Grãos por Terço da Planta (%)</b>"
                 )
 
                 fig.update_traces(
-                    texttemplate='%{text:.1f}%',
+                    texttemplate='<b>%{text:.1f}%</b>',
                     textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
+                    textfont=dict(size=20, family="Arial", color="black")
                 )
 
                 fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
+                    title_font=dict(family="Arial", size=20, color="black"),
                     xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
+                        title=dict(text="<b>Cultivar</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
+                        tickangle=-45
                     ),
                     yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
+                        title=dict(text="<b>Percentual (%)</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
                         range=[0, 100]
                     ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
+                    bargap=0.25,
+                    height=500,
+                    legend_title_text="",
+                    legend=dict(font=dict(size=20, family="Arial", color="black"))
                 )
 
-                fig.update_xaxes(tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
 
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 2 Grãos no Terço Superior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 2 Grãos no Terço Superior"):
+            # ============================ 📊 Gráfico único: Vagens com 1 Grão por Terço ============================
+            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 1 Grão por Terço da Planta"):
+                # Prepara o DataFrame no formato longo
+                df_1g = df_resumo_graos[["Cultivar", "NV_TS_1G_perc", "NV_TM_1G_perc", "NV_TI_1G_perc"]].copy()
+
+                df_1g_long = df_1g.melt(
+                    id_vars="Cultivar",
+                    value_vars=["NV_TS_1G_perc", "NV_TM_1G_perc", "NV_TI_1G_perc"],
+                    var_name="Terço",
+                    value_name="Percentual"
+                )
+
+                df_1g_long["Terço"] = df_1g_long["Terço"].map({
+                    "NV_TS_1G_perc": "Terço Superior",
+                    "NV_TM_1G_perc": "Terço Médio",
+                    "NV_TI_1G_perc": "Terço Inferior"
+                })
+
+                # Cria o gráfico agrupado
                 fig = px.bar(
-                    df_resumo_graos,
+                    df_1g_long,
                     x="Cultivar",
-                    y="NV_TS_2G_perc",
-                    text="NV_TS_2G_perc",
-                    labels={"NV_TS_2G_perc": "% Vagens 2 Grãos - TS"},
-                    title="Percentual de Vagens com 2 Grãos no Terço Superior (%)",
-                    color_discrete_sequence=["lightblue"]
+                    y="Percentual",
+                    color="Terço",
+                    barmode="group",
+                    text="Percentual",
+                    color_discrete_map={
+                        "Terço Superior": "#81D4FA",  # Azul claro
+                        "Terço Médio": "#4FC3F7",     # Verde claro
+                        "Terço Inferior": "#29B6F6"   # Azul escuro
+                    },
+                    title="<b>Percentual de Vagens com 1 Grão por Terço da Planta (%)</b>"
                 )
 
                 fig.update_traces(
-                    texttemplate='%{text:.1f}%',
+                    texttemplate='<b>%{text:.1f}%</b>',
                     textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
+                    textfont=dict(size=20, family="Arial", color="black")
                 )
 
                 fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
+                    title_font=dict(family="Arial", size=20, color="black"),
                     xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
+                        title=dict(text="<b>Cultivar</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
+                        tickangle=-45
                     ),
                     yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
+                        title=dict(text="<b>Percentual (%)</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
                         range=[0, 100]
                     ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
+                    bargap=0.25,
+                    height=500,
+                    legend_title_text="",
+                    legend=dict(font=dict(size=20, family="Arial", color="black"))
                 )
 
-                fig.update_xaxes(tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
+      
 
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 1 Grãos no Terço Superior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 1 Grão no Terço Superior"):
+
+
+            # ============================ 📊 Gráfico único: Percentual de Vagens com 1 a 4 Grãos ============================
+            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 1 a 4 Grãos por Cultivar"):
+                df_vagens_graos = df_resumo_graos[["Cultivar", "NV_1G", "NV_2G", "NV_3G", "NV_4G"]].copy()
+
+                df_vagens_graos_long = df_vagens_graos.melt(
+                    id_vars="Cultivar",
+                    value_vars=["NV_1G", "NV_2G", "NV_3G", "NV_4G"],
+                    var_name="Grãos por Vagem",
+                    value_name="Percentual"
+                )
+
+                df_vagens_graos_long["Grãos por Vagem"] = df_vagens_graos_long["Grãos por Vagem"].map({
+                    "NV_1G": "1 Grão",
+                    "NV_2G": "2 Grãos",
+                    "NV_3G": "3 Grãos",
+                    "NV_4G": "4 Grãos"
+                })
+
                 fig = px.bar(
-                    df_resumo_graos,
+                    df_vagens_graos_long,
                     x="Cultivar",
-                    y="NV_TS_1G_perc",
-                    text="NV_TS_1G_perc",
-                    labels={"NV_TS_1G_perc": "% Vagens 1 Grão - TS"},
-                    title="Percentual de Vagens com 1 Grão no Terço Superior (%)",
-                    color_discrete_sequence=["lightblue"]
+                    y="Percentual",
+                    color="Grãos por Vagem",
+                    barmode="group",
+                    text="Percentual",
+                    title="<b>Percentual de Vagens com 1 a 4 Grãos por Cultivar</b>",
+                    color_discrete_map={
+                        "1 Grão": "#B2EBF2",
+                        "2 Grãos": "#81D4FA",
+                        "3 Grãos": "#4FC3F7",
+                        "4 Grãos": "#29B6F6"
+                    }
                 )
 
                 fig.update_traces(
-                    texttemplate='%{text:.1f}%',
+                    texttemplate='<b>%{text:.1f}%</b>',
                     textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
+                    textfont=dict(size=20, family="Arial", color="black")
                 )
 
                 fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
+                    title_font=dict(family="Arial", size=20, color="black"),
                     xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
+                        title=dict(text="<b>Cultivar</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
+                        tickangle=-45
                     ),
                     yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
+                        title=dict(text="<b>Percentual (%)</b>", font=dict(size=20, family="Arial", color="black")),
+                        tickfont=dict(size=20, family="Arial", color="black"),
                         range=[0, 100]
                     ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
+                    bargap=0.25,
+                    height=500,
+                    legend_title_text="",
+                    legend=dict(font=dict(size=20, family="Arial", color="black"))
                 )
 
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-                      
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 4 Grãos no Terço Medio
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 4 Grãos no Terço Médio"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_TM_4G_perc",
-                    text="NV_TM_4G_perc",
-                    labels={"NV_TM_4G_perc": "% Vagens 4 Grãos - TM"},
-                    title="Percentual de Vagens com 4 Grãos no Terço Médio (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
 
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 3 Grãos no Terço Médio
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 3 Grãos no Terço Médio"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_TM_3G_perc",
-                    text="NV_TM_3G_perc",
-                    labels={"NV_TM_3G_perc": "% Vagens 3 Grãos - TS"},
-                    title="Percentual de Vagens com 3 Grãos no Terço Superior (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
 
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
 
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 2 Grãos no Terço Medio
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 2 Grãos no Terço Médio"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_TM_2G_perc",
-                    text="NV_TM_2G_perc",
-                    labels={"NV_TM_2G_perc": "% Vagens 2 Grãos - TM"},
-                    title="Percentual de Vagens com 2 Grãos no Terço Médio (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 1 Grãos no Terço Medio
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 1 Grão no Terço Médio"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_TM_1G_perc",
-                    text="NV_TM_1G_perc",
-                    labels={"NV_TM_1G_perc": "% Vagens 1 Grão - TM"},
-                    title="Percentual de Vagens com 1 Grão no Terço Médio (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 4 Grãos no Terço Inferior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 4 Grãos no Terço Inferior"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_TI_4G_perc",
-                    text="NV_TI_4G_perc",
-                    labels={"NV_TI_4G_perc": "% Vagens 4 Grãos - TI"},
-                    title="Percentual de Vagens com 4 Grãos no Terço Inferior (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 3 Grãos no Terço Inferior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 3 Grãos no Terço Inferior"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_TI_3G_perc",
-                    text="NV_TI_3G_perc",
-                    labels={"NV_TI_3G_perc": "% Vagens 3 Grãos - TI"},
-                    title="Percentual de Vagens com 3 Grãos no Terço Inferior (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 2 Grãos no Terço Inferior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 2 Grãos no Terço Inferior"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_TI_2G_perc",
-                    text="NV_TI_2G_perc",
-                    labels={"NV_TI_2G_perc": "% Vagens 2 Grãos - TI"},
-                    title="Percentual de Vagens com 2 Grãos no Terço Inferior (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 1 Grão no Terço Inferior
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 1 Grão no Terço Inferior"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_TI_1G_perc",
-                    text="NV_TI_1G_perc",
-                    labels={"NV_TI_1G_perc": "% Vagens 1 Grão - TI"},
-                    title="Percentual de Vagens com 1 Grão no Terço Inferior (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 4 Grãos
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 4 Grãos"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_4G",
-                    text="NV_4G",
-                    labels={"NV_4G": "% Vagens 4 Grãos"},
-                    title="Percentual de Vagens com 4 Grãos (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 3 Grãos
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 3 Grãos"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_3G",
-                    text="NV_3G",
-                    labels={"NV_3G": "% Vagens 3 Grãos"},
-                    title="Percentual de Vagens com 3 Grãos (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 2 Grãos
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 2 Grãos"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_2G",
-                    text="NV_2G",
-                    labels={"NV_2G": "% Vagens 2 Grãos"},
-                    title="Percentual de Vagens com 2 Grãos (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # 📊 Gráfico de barras - Caracterização de Produtividade Número de Vagens com 1 Grão
-            with st.expander("📊 Visualizar Gráfico - Percentual de Vagens com 1 Grão"):
-                fig = px.bar(
-                    df_resumo_graos,
-                    x="Cultivar",
-                    y="NV_1G",
-                    text="NV_1G",
-                    labels={"NV_1G": "% Vagens 1 Grãos"},
-                    title="Percentual de Vagens com 1 Grãos (%)",
-                    color_discrete_sequence=["lightblue"]
-                )
-
-                fig.update_traces(
-                    texttemplate='%{text:.1f}%',
-                    textposition='outside',
-                    textfont=dict(
-                        size=14,
-                        family="Arial",
-                        color="black"
-                    )
-                )
-
-                fig.update_layout(
-                    title_font=dict(
-                        family="Arial",
-                        size=20,
-                        color="black"
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Cultivar",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        )
-                    ),
-                    yaxis=dict(
-                        title=dict(
-                            text="Percentual (%)",
-                            font=dict(
-                                family="Arial",
-                                size=16,
-                                color="black"
-                            )
-                        ),
-                        tickfont=dict(
-                            size=13,
-                            family="Arial",
-                            color="black"
-                        ),
-                        range=[0, 100]
-                    ),
-                    uniformtext_minsize=8,
-                    uniformtext_mode='hide',
-                    bargap=0.3,
-                    height=450
-                )
-
-                fig.update_xaxes(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
+            
           
 
             # 📥 Exportar
@@ -1896,103 +900,7 @@ if "merged_dataframes" in st.session_state:
                 file_name="resumo_cultivar_grao_vagem.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="download_graos"
-            )
-
-
-            # 📊 Gráfico Combinado - Distribuição de Vagens por Terço e por Nº de Grãos")"
-            with st.expander("📊 Gráfico Combinado - Distribuição de Vagens por Terço e por Nº de Grãos"):
-                import plotly.graph_objects as go
-                from plotly.subplots import make_subplots
-
-                cultivar_labels = df_resumo_vagens["Cultivar"]
-
-                fig = make_subplots(
-                    rows=1, cols=2,
-                    subplot_titles=("Número Médio de Vagens por Terço", "Distribuição de Vagens por Nº de Grãos"),
-                    shared_yaxes=True
-                )
-
-                # Parte 1 - Vagens por terço
-                fig.add_trace(go.Bar(
-                    x=df_resumo_vagens["NV_TS_medio"],
-                    y=cultivar_labels,
-                    name="Terço Superior",
-                    orientation='h',
-                    marker_color="#6EC1E4",
-                ), row=1, col=1)
-
-                fig.add_trace(go.Bar(
-                    x=df_resumo_vagens["NV_TM_media"],
-                    y=cultivar_labels,
-                    name="Terço Médio",
-                    orientation='h',
-                    marker_color="#A5D6A7",
-                ), row=1, col=1)
-
-                fig.add_trace(go.Bar(
-                    x=df_resumo_vagens["NV_TI_media"],
-                    y=cultivar_labels,
-                    name="Terço Inferior",
-                    orientation='h',
-                    marker_color="#F48FB1",
-                ), row=1, col=1)
-
-                # Parte 2 - Vagens por nº de grãos
-                fig.add_trace(go.Bar(
-                    x=df_resumo_graos["NV_4G"],
-                    y=cultivar_labels,
-                    name="4 Grãos",
-                    orientation='h',
-                    marker_color="#1976D2"
-                ), row=1, col=2)
-
-                fig.add_trace(go.Bar(
-                    x=df_resumo_graos["NV_3G"],
-                    y=cultivar_labels,
-                    name="3 Grãos",
-                    orientation='h',
-                    marker_color="#4CAF50"
-                ), row=1, col=2)
-
-                fig.add_trace(go.Bar(
-                    x=df_resumo_graos["NV_2G"],
-                    y=cultivar_labels,
-                    name="2 Grãos",
-                    orientation='h',
-                    marker_color="#FFB6C1"
-                ), row=1, col=2)
-
-                fig.add_trace(go.Bar(
-                    x=df_resumo_graos["NV_1G"],
-                    y=cultivar_labels,
-                    name="1 Grão",
-                    orientation='h',
-                    marker_color="#E1BEE7"
-                ), row=1, col=2)
-
-                fig.update_layout(
-                    height=600,
-                    title="📊 Distribuição de Vagens por Parte da Planta e Nº de Grãos",
-                    barmode='stack',
-                    showlegend=True,
-                    xaxis_title="Média de Vagens",
-                    font=dict(size=14, family="Arial"),
-                )
-
-                st.plotly_chart(fig, use_container_width=True)
-
-
-        
-
-
-
-
-
-
-
-
-#=====+++++++++
-
+            )           
 
 
 

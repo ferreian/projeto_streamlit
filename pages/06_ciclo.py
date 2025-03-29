@@ -50,11 +50,19 @@ if "merged_dataframes" in st.session_state:
 
 
 
-        # 🔁 Converte colunas de data do formato timestamp (segundos) para datetime
+        # 🔁 Converte colunas de data do formato timestamp (segundos) para datetime com validação
         for col in ["Plantio", "Colheita", "MAT"]:
             if col in df_ciclo.columns:
-                df_ciclo[col] = pd.to_datetime(df_ciclo[col], unit="s", errors="coerce")
-                df_ciclo[col] = df_ciclo[col].dt.strftime("%d/%m/%Y")  # Formato brasileiro
+                # Converte para numérico
+                df_ciclo[col] = pd.to_numeric(df_ciclo[col], errors="coerce")
+
+        # Filtra valores razoáveis (ex: entre 946684800 e 1893456000, que corresponde a anos entre 2000 e 2030)
+        df_ciclo[col] = df_ciclo[col].where(df_ciclo[col].between(946684800, 1893456000), np.nan)
+
+        # Converte para datetime
+        df_ciclo[col] = pd.to_datetime(df_ciclo[col], unit="s", errors="coerce")
+        df_ciclo[col] = df_ciclo[col].dt.strftime("%d/%m/%Y")
+
 
 
         # 🧮 Calcula o ciclo em dias (diferença entre MAT e Plantio - 5 dias)
@@ -234,7 +242,7 @@ if "merged_dataframes" in st.session_state:
 
             # 📊 Resumo por Cultivar com Mínimo e Máximo
             st.markdown("---")
-            st.markdown("### 📌 Resumo do Ciclo por Cultivar")
+            st.markdown("### 📊 Resumo do Ciclo por Cultivar")
 
             # 🧮 Agrupa e calcula as estatísticas
             df_resumo = df_ciclo.groupby(["Cultivar", "GM"]).agg({
