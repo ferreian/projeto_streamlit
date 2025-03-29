@@ -198,6 +198,7 @@ if "merged_dataframes" in st.session_state:
 
             
             # 🤜🏻🤛🏻 Análise Head to Head
+            # 🤜🏻🤛🏻 Análise Head to Head
             st.markdown("---")
             st.markdown("### ⚔️ Análise Head to Head entre Cultivares")
             st.markdown("""
@@ -208,9 +209,10 @@ if "merged_dataframes" in st.session_state:
             </small>
             """, unsafe_allow_html=True)
 
+            # Botão para rodar análise
             if st.button("🔁 Rodar Análise Head to Head"):
                 df_final_av7["Local"] = df_final_av7["Fazenda"] + "_" + df_final_av7["Cidade"]
-                df_h2h = df_final_av7[["Local", "Cultivar", "prod_sc_ha"]].dropna()
+                df_h2h = df_final_av7[["Local", "Cultivar", "prod_sc_ha", "Pop_Final", "Umidade (%)"]].dropna()
 
                 resultados_h2h = []
 
@@ -218,27 +220,39 @@ if "merged_dataframes" in st.session_state:
                     cultivares = grupo["Cultivar"].unique()
 
                     for head in cultivares:
-                        prod_head = grupo[grupo["Cultivar"] == head]["prod_sc_ha"].values
-                        if len(prod_head) == 0:
+                        head_row = grupo[grupo["Cultivar"] == head]
+                        if head_row.empty:
                             continue
+
+                        prod_head = head_row["prod_sc_ha"].values[0]
+                        pop_head = head_row["Pop_Final"].values[0]
+                        umid_head = head_row["Umidade (%)"].values[0]
 
                         for check in cultivares:
                             if head == check:
                                 continue
 
-                            prod_check = grupo[grupo["Cultivar"] == check]["prod_sc_ha"].values
-                            if len(prod_check) == 0:
+                            check_row = grupo[grupo["Cultivar"] == check]
+                            if check_row.empty:
                                 continue
 
-                            diff = prod_head[0] - prod_check[0]
+                            prod_check = check_row["prod_sc_ha"].values[0]
+                            pop_check = check_row["Pop_Final"].values[0]
+                            umid_check = check_row["Umidade (%)"].values[0]
+
+                            diff = prod_head - prod_check
                             win = int(diff > 1)
                             draw = int(-1 <= diff <= 1)
 
                             resultados_h2h.append({
                                 "Head": head,
                                 "Check": check,
-                                "Head_Mean": round(prod_head[0], 1),
-                                "Check_Mean": round(prod_check[0], 1),
+                                "Head_Mean": round(prod_head, 1),
+                                "Check_Mean": round(prod_check, 1),
+                                "Pop_Final_Head": round(pop_head, 0),
+                                "Umidade_Head": round(umid_head, 1),
+                                "Pop_Final_Check": round(pop_check, 0),
+                                "Umidade_Check": round(umid_check, 1),
                                 "Difference": round(diff, 1),
                                 "Number_of_Win": win,
                                 "Is_Draw": draw,
@@ -248,23 +262,120 @@ if "merged_dataframes" in st.session_state:
                             })
 
                 df_resultado_h2h = pd.DataFrame(resultados_h2h)
+
+                # 🔍 Lista de colunas visíveis (ajustável)
+                colunas_visiveis = [
+                    "Local", "Head", "Pop_Final_Head", "Umidade_Head", "Head_Mean",
+                    "Check", "Pop_Final_Check", "Umidade_Check", "Check_Mean"                    
+                ]
+                #"Difference", "Number_of_Win", "Is_Draw", "Percentage_of_Win", "Number_of_Comparison"
+
                 st.session_state["df_resultado_h2h"] = df_resultado_h2h
+                st.session_state["colunas_visiveis_h2h"] = colunas_visiveis
                 st.success("✅ Análise concluída!")
 
+            
+            # Exibição interativa da Tabela Head-to-Head
             if "df_resultado_h2h" in st.session_state:
                 df_resultado_h2h = st.session_state["df_resultado_h2h"]
+                colunas_visiveis = st.session_state.get("colunas_visiveis_h2h", df_resultado_h2h.columns.tolist())
 
-                from st_aggrid import GridOptionsBuilder, AgGrid
+                #
 
-                df_h2h_fmt = df_resultado_h2h.copy()
-                gb = GridOptionsBuilder.from_dataframe(df_h2h_fmt)
-                colunas_float = df_h2h_fmt.select_dtypes(include=["float"]).columns
-                for col in colunas_float:
-                    gb.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
-                gb.configure_default_column(cellStyle={'fontSize': '14px'})
-                gb.configure_grid_options(headerHeight=30)
-                custom_css = {".ag-header-cell-label": {"font-weight": "bold", "font-size": "15px", "color": "black"}}
-                AgGrid(df_h2h_fmt, gridOptions=gb.build(), height=600, custom_css=custom_css)
+                import numpy as np
+
+                # 🔽 Seletor para Head e Check
+                st.markdown("### 🎯 Selecione os cultivares para exibir na Tabela")
+                col1, col2 = st.columns(2)
+                with col1:
+                    head_filtrado = st.selectbox("Cultivar Head", sorted(df_resultado_h2h["Head"].unique()), key="head_tabela")
+                with col2:
+                    check_filtrado = st.selectbox("Cultivar Check", sorted(df_resultado_h2h["Check"].unique()), key="check_tabela")
+
+                df_filtrado = df_resultado_h2h[
+                    (df_resultado_h2h["Head"] == head_filtrado) & (df_resultado_h2h["Check"] == check_filtrado)
+                ]
+
+                st.markdown(f"### 📋 Tabela Head to Head: <b>{head_filtrado} x {check_filtrado}</b>", unsafe_allow_html=True)
+
+                if not df_filtrado.empty:
+                    df_h2h_fmt = df_filtrado[colunas_visiveis].copy()
+
+                    from st_aggrid import JsCode
+
+                    # Função JavaScript para colorir conforme o valor (escala de cor)
+                    cell_style_js = JsCode("""
+                    function(params) {
+                        let value = params.value;
+                        let min = 0;
+                        let max = 100;
+                        let ratio = (value - min) / (max - min);
+                        
+                        let r, g, b;
+                        if (ratio < 0.5) {
+                            r = 253;
+                            g = 98 + ratio * 2 * (200 - 98);
+                            b = 94 + ratio * 2 * (15 - 94);
+                        } else {
+                            r = 242 - (ratio - 0.5) * 2 * (242 - 1);
+                            g = 200 - (ratio - 0.5) * 2 * (200 - 184);
+                            b = 15 + (ratio - 0.5) * 2 * (170 - 15);
+                        }
+
+                        return {
+                            'backgroundColor': 'rgb(' + r + ',' + g + ',' + b + ')',
+                            'color': 'black',
+                            'fontWeight': 'bold',
+                            'fontSize': '16px'  // 👈 Aqui aumenta o tamanho
+                        }
+                    }
+                    """)
+
+
+                    # Configura AgGrid com estilo condicional JS
+                    gb = GridOptionsBuilder.from_dataframe(df_h2h_fmt)
+
+                    # 👉 Formatação padrão
+                    gb.configure_column("Pop_Final_Head", type=["numericColumn"], valueFormatter="x.toFixed(0)")
+                    gb.configure_column("Pop_Final_Check", type=["numericColumn"], valueFormatter="x.toFixed(0)")
+                    gb.configure_column("Umidade_Head", type=["numericColumn"], valueFormatter="x.toFixed(1)")
+                    gb.configure_column("Umidade_Check", type=["numericColumn"], valueFormatter="x.toFixed(1)")
+
+                    # Colunas com cor gradiente
+                    gb.configure_column("Head_Mean", type=["numericColumn"], valueFormatter="x.toFixed(1)", cellStyle=cell_style_js)
+                    gb.configure_column("Check_Mean", type=["numericColumn"], valueFormatter="x.toFixed(1)", cellStyle=cell_style_js)
+
+                    # Demais floats
+                    for col in df_h2h_fmt.select_dtypes(include=["float"]).columns:
+                        if col not in ["Pop_Final_Head", "Pop_Final_Check", "Umidade_Head", "Umidade_Check", "Head_Mean", "Check_Mean"]:
+                            gb.configure_column(field=col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
+
+                    gb.configure_default_column(cellStyle={'fontSize': '14px'})
+                    gb.configure_grid_options(headerHeight=30)
+
+                    custom_css = {
+                        ".ag-header-cell-label": {
+                            "font-weight": "bold",
+                            "font-size": "15px",
+                            "color": "black"
+                        }
+                    }
+
+                    AgGrid(
+                        df_h2h_fmt,
+                        gridOptions=gb.build(),
+                        height=600,
+                        custom_css=custom_css,
+                        allow_unsafe_jscode=True  # Habilita uso de JsCode
+                    )
+
+                else:
+                    st.warning("⚠️ Nenhum dado disponível para essa combinação.")
+
+
+
+
+
 
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
@@ -276,6 +387,19 @@ if "merged_dataframes" in st.session_state:
                     file_name="resultado_head_to_head.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+                # ⬇️ Botão para baixar o df_filtrado
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+                    df_filtrado.to_excel(writer, sheet_name="head_to_head_filtrado", index=False)
+
+                st.download_button(
+                    label="📥 Baixar Resultado Filtrado",
+                    data=buffer.getvalue(),
+                    file_name=f"head_to_head_{head_filtrado}_vs_{check_filtrado}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
 
                 st.markdown("### 🔹 Selecione os cultivares para comparação Head to Head")
                 cultivares_unicos = sorted(df_resultado_h2h["Head"].unique())
@@ -377,6 +501,65 @@ if "merged_dataframes" in st.session_state:
                         st.markdown("</div>", unsafe_allow_html=True)
 
 
+                    
+                    # 📊 Gráfico de Diferença por Local (Head vs Check) - Ordenado e Horizontal  
+                    st.markdown(f"### <b>📊 Diferença de Produtividade por Local - {head_select} X {check_select}</b>", unsafe_allow_html=True)
+                    st.markdown("")                    
+                    st.markdown("### 📌 Dica: para melhor visualização dos rótulos, filtre para um número menor de locais.")
+
+
+                    df_selecionado_sorted = df_selecionado.sort_values("Difference")
+
+                    import plotly.graph_objects as go
+
+                    fig_diff_local = go.Figure()
+
+                    cores_local = df_selecionado["Difference"].apply(
+                        lambda x: "#01B8AA" if x > 1 else "#FD625E" if x < -1 else "#F2C80F"
+                    )
+
+                    fig_diff_local.add_trace(go.Bar(
+                        y=df_selecionado["Local"],
+                        x=df_selecionado["Difference"],
+                        orientation='h',
+                        text=df_selecionado["Difference"].round(1),
+                        textposition="outside",
+                        textfont=dict(size=20, family="Arial Black", color="black"),  # Força negrito e tamanho 20
+                        marker_color=cores_local
+                    ))
+
+                    fig_diff_local.update_layout(
+                        title=dict(
+                            text=f"<b>📍 Diferença de Produtividade por Local — {head_select} X {check_select}</b>",
+                            font=dict(size=20, family="Arial Black", color="black")
+                        ),
+                        xaxis=dict(
+                            title=dict(text="<b>Diferença (sc/ha)</b>", font=dict(size=20, family="Arial Black", color="black")),
+                            tickfont=dict(size=20, family="Arial Black", color="black")
+                        ),
+                        yaxis=dict(
+                            title=dict(text="<b>Local</b>", font=dict(size=20, family="Arial Black", color="black")),
+                            tickfont=dict(size=20, family="Arial Black", color="black")
+                        ),
+                        margin=dict(t=40, b=40, l=100, r=40),
+                        height=600,
+                        showlegend=False
+                    )
+
+                    st.plotly_chart(fig_diff_local, use_container_width=True)
+
+
+
+
+
+
+
+
+
+
+                    
+
+
                 # Comparacao Multichecks
                 st.markdown("### 🔹 Comparação Head x Múltiplos Checks")
                 st.markdown("""
@@ -398,6 +581,12 @@ if "merged_dataframes" in st.session_state:
                     ]
 
                     if not df_multi.empty:
+                        # 👉 Produtividade média do Head
+                        prod_head_media = df_multi["Head_Mean"].mean().round(1)
+
+                        # 🧷 Título atualizado com produtividade
+                        st.markdown(f"#### 🎯 Cultivar Head: **{head_unico}** | Produtividade Média: **{prod_head_media} sc/ha**")
+
                         resumo = df_multi.groupby("Check").agg({
                             "Number_of_Win": "sum",
                             "Number_of_Comparison": "sum",
@@ -439,7 +628,6 @@ if "merged_dataframes" in st.session_state:
 
                         with col_grafico:
                             fig_diff = go.Figure()
-                            # Define as cores de acordo com a regra: vitória, empate, derrota
                             cores_personalizadas = resumo["Diferença Média"].apply(
                                 lambda x: "#01B8AA" if x > 1 else "#FD625E" if x < -1 else "#F2C80F"
                             )
@@ -466,6 +654,7 @@ if "merged_dataframes" in st.session_state:
                             st.plotly_chart(fig_diff, use_container_width=True)
                     else:
                         st.info("❓ Nenhuma comparação disponível com os Checks selecionados.")
+
 
 
 
