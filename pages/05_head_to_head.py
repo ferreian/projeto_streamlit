@@ -196,8 +196,6 @@ if "merged_dataframes" in st.session_state:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-            
-            # 🤜🏻🤛🏻 Análise Head to Head
             # 🤜🏻🤛🏻 Análise Head to Head
             st.markdown("---")
             st.markdown("### ⚔️ Análise Head to Head entre Cultivares")
@@ -212,7 +210,10 @@ if "merged_dataframes" in st.session_state:
             # Botão para rodar análise
             if st.button("🔁 Rodar Análise Head to Head"):
                 df_final_av7["Local"] = df_final_av7["Fazenda"] + "_" + df_final_av7["Cidade"]
+
+                # 🎯 Filtra somente valores válidos de produtividade (> 0)
                 df_h2h = df_final_av7[["Local", "Cultivar", "prod_sc_ha", "Pop_Final", "Umidade (%)"]].dropna()
+                df_h2h = df_h2h[df_h2h["prod_sc_ha"] > 0]
 
                 resultados_h2h = []
 
@@ -263,16 +264,16 @@ if "merged_dataframes" in st.session_state:
 
                 df_resultado_h2h = pd.DataFrame(resultados_h2h)
 
-                # 🔍 Lista de colunas visíveis (ajustável)
+                # 🔍 Colunas visíveis padrão
                 colunas_visiveis = [
                     "Local", "Head", "Pop_Final_Head", "Umidade_Head", "Head_Mean",
-                    "Check", "Pop_Final_Check", "Umidade_Check", "Check_Mean"                    
+                    "Check", "Pop_Final_Check", "Umidade_Check", "Check_Mean"
                 ]
-                #"Difference", "Number_of_Win", "Is_Draw", "Percentage_of_Win", "Number_of_Comparison"
 
                 st.session_state["df_resultado_h2h"] = df_resultado_h2h
                 st.session_state["colunas_visiveis_h2h"] = colunas_visiveis
-                st.success("✅ Análise concluída!")
+                st.success("✅ Análise concluída (zeros removidos)!")
+
 
             
             # Exibição interativa da Tabela Head-to-Head
@@ -476,7 +477,7 @@ if "merged_dataframes" in st.session_state:
 
 
                     st.markdown("")
-                    
+                   
                     # 📊 Gráfico de Pizza
                     col7, col8, col9 = st.columns([1, 2, 1])
                     with col8:
@@ -496,35 +497,46 @@ if "merged_dataframes" in st.session_state:
                             textfont=dict(size=20, color="black", family="Arial Black"),
                         )])
 
-                        fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=270, showlegend=False)
+                        # ⬇️ Aumenta margem inferior e altura do gráfico
+                        fig.update_layout(
+                            margin=dict(t=10, b=60, l=10, r=10),  # margem inferior aumentada
+                            height=330,  # altura ajustada
+                            showlegend=False
+                        )
+
                         st.plotly_chart(fig, use_container_width=True)
                         st.markdown("</div>", unsafe_allow_html=True)
 
 
+
+
                     
-                    # 📊 Gráfico de Diferença por Local (Head vs Check) - Ordenado e Horizontal  
+                   # 📊 Gráfico de Diferença por Local (Head vs Check) - Ordenado e Horizontal  
                     st.markdown(f"### <b>📊 Diferença de Produtividade por Local - {head_select} X {check_select}</b>", unsafe_allow_html=True)
                     st.markdown("")                    
                     st.markdown("### 📌 Dica: para melhor visualização dos rótulos, filtre para um número menor de locais.")
 
+                    # 🔍 Filtra dados com produtividade válida (> 0) antes do gráfico
+                    df_selecionado = df_selecionado[
+                        (df_selecionado["Head_Mean"] > 0) & (df_selecionado["Check_Mean"] > 0)
+                    ]
 
+                    # ✅ Ordena para visualização
                     df_selecionado_sorted = df_selecionado.sort_values("Difference")
-
-                    import plotly.graph_objects as go
 
                     fig_diff_local = go.Figure()
 
-                    cores_local = df_selecionado["Difference"].apply(
+                    cores_local = df_selecionado_sorted["Difference"].apply(
                         lambda x: "#01B8AA" if x > 1 else "#FD625E" if x < -1 else "#F2C80F"
                     )
 
                     fig_diff_local.add_trace(go.Bar(
-                        y=df_selecionado["Local"],
-                        x=df_selecionado["Difference"],
+                        y=df_selecionado_sorted["Local"],
+                        x=df_selecionado_sorted["Difference"],
                         orientation='h',
-                        text=df_selecionado["Difference"].round(1),
+                        text=df_selecionado_sorted["Difference"].round(1),
                         textposition="outside",
-                        textfont=dict(size=20, family="Arial Black", color="black"),  # Força negrito e tamanho 20
+                        textfont=dict(size=20, family="Arial Black", color="black"),
                         marker_color=cores_local
                     ))
 
@@ -547,14 +559,6 @@ if "merged_dataframes" in st.session_state:
                     )
 
                     st.plotly_chart(fig_diff_local, use_container_width=True)
-
-
-
-
-
-
-
-
 
 
                     
