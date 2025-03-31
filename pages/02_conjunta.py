@@ -354,7 +354,7 @@ if "merged_dataframes" in st.session_state:
                     df_faixa_completo["AC"] = df_faixa_completo["AC"].fillna(9)
                     df_faixa_completo["AC"] = df_faixa_completo["AC"].replace(0, 9)
 
-                ## ✅ Aqui salva no session_state
+                ## ✅ Aqui salva no session_state  
                 st.session_state["df_faixa_completo"] = df_faixa_completo
 
                 # calcula as estatisticas sem considerar os zeros
@@ -546,7 +546,7 @@ if "merged_dataframes" in st.session_state:
 
                 # Colunas visíveis
                 colunas_visiveis = [
-                    "Cultivar","Pop_Final","Umidade","MAT","Prod_kg_ha","Prod_sc_ha","AC","AIV", "ALT",
+                    "Cultivar","Umidade","Prod_kg_ha","Prod_sc_ha","Pop_Final","AIV", "ALT","AC"
                 ]
 
                 # Exibe a tabela
