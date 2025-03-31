@@ -608,7 +608,8 @@ if "merged_dataframes" in st.session_state:
                 # Botão para baixar
                 output_resumo = io.BytesIO()
                 with pd.ExcelWriter(output_resumo, engine="xlsxwriter") as writer:
-                    df_conjunta_cultivar.to_excel(writer, index=False, sheet_name="resumo_fazendas")
+                    df_fmt.to_excel(writer, index=False, sheet_name="resumo_fazendas")
+
 
                 st.download_button(
                     label="📥 Baixar Resumo de Conjunta",

@@ -88,13 +88,7 @@ if "merged_dataframes" in st.session_state:
                     )
                     df_caract = df_caract[df_caract["GM"].between(gm_range[0], gm_range[1])]
                 else:
-                    st.info(f"Grupo de Maturação disponível: **{gm_min}**")
-
-
-
-
-
-        
+                    st.info(f"Grupo de Maturação disponível: **{gm_min}**")        
 
         
         # 📊 Tabela
@@ -531,9 +525,9 @@ if "merged_dataframes" in st.session_state:
 
                 # 🌈 Cores claras personalizadas
                 cores_personalizadas = {
-                    "Terço Superior": "#81D4FA",  # Azul claro
-                    "Terço Médio": "#4FC3F7",     # Azul médio
-                    "Terço Inferior": "#29B6F6"   # Azul escuro
+                    "Terço Superior": "#438AD8",  # Azul escuro
+                    "Terço Médio": "#5EEFF7",     # Azul água
+                    "Terço Inferior": "#0C9A73"   # Verde escuro
                 }
 
                 # 🎯 Gráfico
@@ -603,10 +597,10 @@ if "merged_dataframes" in st.session_state:
                     barmode="group",
                     text="Percentual",
                     color_discrete_map={
-                        "Terço Superior": "#81D4FA",
-                        "Terço Médio": "#4FC3F7",
-                        "Terço Inferior": "#29B6F6"
-                    },
+                        "Terço Superior": "#438AD8",  # Azul escuro
+                        "Terço Médio": "#5EEFF7",     # Azul água
+                        "Terço Inferior": "#0C9A73"   # Verde escuro
+                        },
                     title="<b>Percentual de Vagens com 4 Grãos por Terço da Planta (%)</b>"
                 )
 
@@ -666,10 +660,10 @@ if "merged_dataframes" in st.session_state:
                     barmode="group",
                     text="Percentual",
                     color_discrete_map={
-                        "Terço Superior": "#81D4FA",
-                        "Terço Médio": "#4FC3F7",
-                        "Terço Inferior": "#29B6F6"
-                    },
+                        "Terço Superior": "#438AD8",  # Azul escuro
+                        "Terço Médio": "#5EEFF7",     # Azul água
+                        "Terço Inferior": "#0C9A73"   # Verde escuro
+                        },
                     title="<b>Percentual de Vagens com 3 Grãos por Terço da Planta (%)</b>"
                 )
 
@@ -728,10 +722,10 @@ if "merged_dataframes" in st.session_state:
                     barmode="group",
                     text="Percentual",
                     color_discrete_map={
-                        "Terço Superior": "#81D4FA",
-                        "Terço Médio": "#4FC3F7",
-                        "Terço Inferior": "#29B6F6"
-                    },
+                        "Terço Superior": "#438AD8",  # Azul escuro
+                        "Terço Médio": "#5EEFF7",     # Azul água
+                        "Terço Inferior": "#0C9A73"   # Verde escuro
+                        },
                     title="<b>Percentual de Vagens com 2 Grãos por Terço da Planta (%)</b>"
                 )
 
@@ -788,10 +782,10 @@ if "merged_dataframes" in st.session_state:
                     barmode="group",
                     text="Percentual",
                     color_discrete_map={
-                        "Terço Superior": "#81D4FA",  # Azul claro
-                        "Terço Médio": "#4FC3F7",     # Verde claro
-                        "Terço Inferior": "#29B6F6"   # Azul escuro
-                    },
+                        "Terço Superior": "#438AD8",  # Azul escuro
+                        "Terço Médio": "#5EEFF7",     # Azul água
+                        "Terço Inferior": "#0C9A73"   # Verde escuro
+                        },
                     title="<b>Percentual de Vagens com 1 Grão por Terço da Planta (%)</b>"
                 )
 
@@ -851,10 +845,10 @@ if "merged_dataframes" in st.session_state:
                     text="Percentual",
                     title="<b>Percentual de Vagens com 1 a 4 Grãos por Cultivar</b>",
                     color_discrete_map={
-                        "1 Grão": "#B2EBF2",
-                        "2 Grãos": "#81D4FA",
-                        "3 Grãos": "#4FC3F7",
-                        "4 Grãos": "#29B6F6"
+                        "1 Grão": "#438AD8",    # Azul escuro
+                        "2 Grãos": "#5EEFF7",   # Azul água
+                        "3 Grãos": "#0C9A73",   # Verde escuro
+                        "4 Grãos": "#7D9632"    # Verde claro
                     }
                 )
 

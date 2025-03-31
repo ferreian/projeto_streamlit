@@ -365,7 +365,7 @@ if "merged_dataframes" in st.session_state:
                     AgGrid(
                         df_h2h_fmt,
                         gridOptions=gb.build(),
-                        height=600,
+                        height=800,
                         custom_css=custom_css,
                         allow_unsafe_jscode=True  # Habilita uso de JsCode
                     )
@@ -610,7 +610,7 @@ if "merged_dataframes" in st.session_state:
 
                         resumo = resumo[["Cultivar Check", "% Vitórias", "Num_Locais", "Prod_sc_ha_media", "Diferença Média"]]
 
-                        col_tabela, col_grafico = st.columns([1.3, 1.7])
+                        col_tabela, col_grafico = st.columns([1.4, 1.6])
                         with col_tabela:
                             st.markdown("### 📊 Tabela Comparativa")
                             gb = GridOptionsBuilder.from_dataframe(resumo)
