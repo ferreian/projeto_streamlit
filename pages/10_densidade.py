@@ -760,6 +760,108 @@ if "merged_dataframes" in st.session_state:
 
 
 
+            
+            # Gráfico 📊 Produção média por faixa de População Final
+            with st.expander("📊 Média de Produção por Faixa de População Final", expanded=True):
+                st.markdown("Este gráfico mostra a média de produção (`sc/ha`) por faixas de `Pop_Final`.")
+
+                # Cria as faixas personalizadas de 50k em 50k
+                bins = list(range(0, int(df_final_av7["Pop_Final"].max()) + 50000, 50000))
+                labels = [f"{int(bins[i]/1000)}K - {int(bins[i+1]/1000)}K" for i in range(len(bins)-1)]
+
+                df_faixa = df_final_av7.copy()
+                df_faixa = df_faixa[df_faixa["Pop_Final"] > 0]  # remove zeros
+                df_faixa["Faixa_Pop"] = pd.cut(df_faixa["Pop_Final"], bins=bins, labels=labels, right=False)
+
+                # Agrupa para calcular média e contagem
+                df_grouped = df_faixa.groupby("Faixa_Pop").agg({
+                    "prod_sc_ha": "mean",
+                    "Cultivar": "count"
+                }).reset_index().rename(columns={"Cultivar": "n_amostras"})
+
+                df_grouped = df_grouped.dropna()
+
+                # Gráfico de barras
+                fig_bar = px.bar(
+                    df_grouped,
+                    x="Faixa_Pop",
+                    y="n_amostras",
+                    text=df_grouped["prod_sc_ha"].round(1).astype(str) + " sc/ha",
+                    labels={"n_amostras": "Nº de Amostras", "Faixa_Pop": "Faixa de População Final"},
+                    title="Produção média (sc/ha) por faixa de População Final"
+                )
+
+                fig_bar.update_traces(textposition="outside")
+                fig_bar.update_layout(
+                    xaxis_title="Faixa de População Final",
+                    yaxis_title="Nº de Amostras",
+                    template="plotly_white",
+                    font=dict(family="Arial", size=14),
+                    height=500
+                )
+
+                st.plotly_chart(fig_bar, use_container_width=True)
+            
+
+            import plotly.express as px
+            import numpy as np
+            import pandas as pd
+            from sklearn.linear_model import LinearRegression
+
+            # Regressão Linear 📈 População Final vs Produção (sc/ha)
+            with st.expander("📈 Regressão Linear: População Final vs Produção (sc/ha)", expanded=True):
+                st.markdown("Análise de tendência linear entre População Final e Produção (`sc/ha`).")
+
+                # Prepara os dados (remove nulos, zeros e infinitos)
+                df_reg = df_final_av7.copy()
+                df_reg["Pop_Final"] = pd.to_numeric(df_reg["Pop_Final"], errors="coerce")
+                df_reg["prod_sc_ha"] = pd.to_numeric(df_reg["prod_sc_ha"], errors="coerce")
+
+                df_reg = df_reg[
+                    (df_reg["Pop_Final"].notna()) &
+                    (df_reg["Pop_Final"] > 0) &
+                    (~np.isinf(df_reg["Pop_Final"])) &
+                    (df_reg["prod_sc_ha"].notna()) &
+                    (df_reg["prod_sc_ha"] > 0) &
+                    (~np.isinf(df_reg["prod_sc_ha"]))
+                ]
+
+                # Regressão linear
+                X = df_reg[["Pop_Final"]].values
+                y = df_reg["prod_sc_ha"].values
+                model = LinearRegression()
+                model.fit(X, y)
+
+                # Predição para linha de tendência
+                x_range = np.linspace(df_reg["Pop_Final"].min(), df_reg["Pop_Final"].max(), 100)
+                y_pred = model.predict(x_range.reshape(-1, 1))
+
+                # Gráfico
+                fig = px.scatter(df_reg, x="Pop_Final", y="prod_sc_ha",
+                                trendline=None,
+                                labels={"Pop_Final": "População Final", "prod_sc_ha": "Produção (sc/ha)"},
+                                title="Regressão Linear: População Final vs Produção (sc/ha)")
+
+                fig.add_traces(px.line(x=x_range, y=y_pred, labels={"x": "Pop_Final", "y": "Produção"}).data)
+
+                # Ajustes visuais
+                fig.update_layout(
+                    template="plotly_white",
+                    height=500,
+                    title=dict(font=dict(size=18, family="Arial Black", color="black")),
+                    xaxis=dict(title=dict(text="População Final", font=dict(family="Arial Black", size=14))),
+                    yaxis=dict(title=dict(text="Produção (sc/ha)", font=dict(family="Arial Black", size=14)))
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
+
+
+
+
+
+
+
+
 
 
 
