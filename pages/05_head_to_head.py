@@ -606,7 +606,11 @@ if "merged_dataframes" in st.session_state:
 
                         resumo["% Vitórias"] = (resumo["Vitórias"] / resumo["Num_Locais"] * 100).round(1)
                         resumo["Prod_sc_ha_media"] = resumo["Prod_sc_ha_media"].round(1)
-                        resumo["Diferença Média"] = (resumo["% Vitórias"] - 50).round(1)
+                        resumo["Diferença Média"] = (prod_head_media - resumo["Prod_sc_ha_media"]).round(1)
+                        
+
+
+
 
                         resumo = resumo[["Cultivar Check", "% Vitórias", "Num_Locais", "Prod_sc_ha_media", "Diferença Média"]]
 
