@@ -82,6 +82,9 @@ if "merged_dataframes" in st.session_state:
         }
 
         df_final_av7 = df_final_av7[colunas_selecionadas].rename(columns=colunas_renomeadas)
+        # Remove registros do tipo "Densidade"
+        df_final_av7 = df_final_av7[df_final_av7["Teste"] != "Densidade"]
+
 
         # Normaliza nomes das colunas para facilitar filtros
         df_final_av7.columns = df_final_av7.columns.str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
@@ -114,6 +117,7 @@ if "merged_dataframes" in st.session_state:
 
         with col_filtros:
             st.markdown("### 🎧 Filtros")
+
             filtros = {
                 "Microrregiao": "Microrregião",
                 "Estado": "Estado",
@@ -130,14 +134,19 @@ if "merged_dataframes" in st.session_state:
                         if len(valores_gm) > 0:
                             gm_min = int(df_final_av7["GM"].min())
                             gm_max = int(df_final_av7["GM"].max())
-                            intervalo_gm = st.slider(
-                                "Selecione intervalo de GM:",
-                                min_value=gm_min,
-                                max_value=gm_max,
-                                value=(gm_min, gm_max),
-                                step=1
-                            )
-                            df_final_av7 = df_final_av7[df_final_av7["GM"].between(intervalo_gm[0], intervalo_gm[1])]
+
+                            if gm_min < gm_max:
+                                intervalo_gm = st.slider(
+                                    "Selecione intervalo de GM:",
+                                    min_value=gm_min,
+                                    max_value=gm_max,
+                                    value=(gm_min, gm_max),
+                                    step=1
+                                )
+                                df_final_av7 = df_final_av7[df_final_av7["GM"].between(intervalo_gm[0], intervalo_gm[1])]
+                            else:
+                                st.info(f"Apenas um valor de GM disponível: {gm_min}")
+                                df_final_av7 = df_final_av7[df_final_av7["GM"] == gm_min]
                     else:
                         with st.expander(label):
                             opcoes = sorted(df_final_av7[coluna].dropna().unique())
@@ -148,6 +157,7 @@ if "merged_dataframes" in st.session_state:
                                     selecionados.append(op)
                             if selecionados:
                                 df_final_av7 = df_final_av7[df_final_av7[coluna].isin(selecionados)]
+
 
         with col_tabela:
             st.markdown("### 📋 Tabela de Dados Utilizada na análise (AV7)")
