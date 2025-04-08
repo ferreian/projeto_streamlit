@@ -20,6 +20,9 @@ if "merged_dataframes" in st.session_state:
 
         df_final_av7 = df_av7[~df_av7["displayName"].isin(["raullanconi", "stine"])].copy()
 
+        # 👉 Filtro para manter somente os que são "Faixa"
+        df_final_av7 = df_final_av7[df_final_av7["tipoTeste"] == "Faixa"]
+
         if "numeroLinhas" in df_final_av7.columns and "comprimentoLinha" in df_final_av7.columns:
             df_final_av7["areaParcela"] = df_final_av7["numeroLinhas"] * df_final_av7["comprimentoLinha"] * 0.5
 
@@ -255,16 +258,15 @@ if "merged_dataframes" in st.session_state:
             st.markdown("#### 📋 Tabela Performance dos Materiais")
 
             colunas_pivot = [
-                "Cidade", "Cultivar", "Index", "GM",
-                "prod_sc_ha", "Média Geral (sc/ha)", "Média Local (sc/ha)", "Média Top (sc/ha)"
+                "Cidade", "Cultivar", "Index", "GM", "prod_sc_ha"
             ]
             df_pivot = df_final_av7[colunas_pivot].copy()
 
-            # 🔁 Derrete as métricas (sem Umidade)
+            # 🔁 Derrete apenas a métrica de produção
             df_melted = pd.melt(
                 df_pivot,
                 id_vars=["Cultivar", "Index", "GM", "Cidade"],
-                value_vars=["prod_sc_ha", "Média Geral (sc/ha)", "Média Local (sc/ha)", "Média Top (sc/ha)"],
+                value_vars=["prod_sc_ha"],
                 var_name="Métrica",
                 value_name="Valor"
             )
@@ -277,25 +279,33 @@ if "merged_dataframes" in st.session_state:
                 aggfunc="mean"
             ).reset_index()
 
-            # ✅ Estilo para destacar linha "prod_sc_ha"
-            df_pivotado["EstiloLinha"] = df_pivotado["Métrica"].apply(
-                lambda x: "destacar" if x == "prod_sc_ha" else "normal"
+            # ❌ Remove coluna 'Métrica' (já sabemos que é só prod_sc_ha)
+            df_pivotado.drop(columns=["Métrica"], inplace=True)
+
+            # 👉 Adiciona a coluna "Média Top (sc/ha)" ao lado de GM
+            df_pivotado = df_pivotado.merge(
+                df_final_av7[["Cultivar", "Index", "GM", "Média Top (sc/ha)"]].drop_duplicates(),
+                on=["Cultivar", "Index", "GM"],
+                how="left"
             )
 
-            from st_aggrid import JsCode
-            row_style = JsCode("""
-            function(params) {
-                if (params.data.EstiloLinha === 'destacar') {
-                    return {
-                        'fontWeight': 'bold',
-                        'backgroundColor': '#f0f0f0'
-                    }
-                }
-                return {};
-            }
-            """)
+            # 🔁 Reordena colunas para colocar "Média Top (sc/ha)" depois de GM
+            colunas_ordenadas = ["Cultivar", "Index", "GM", "Média Top (sc/ha)"] + [
+                col for col in df_pivotado.columns if col not in ["Cultivar", "Index", "GM", "Média Top (sc/ha)"]
+            ]
+            df_pivotado = df_pivotado[colunas_ordenadas]
 
-            gb = GridOptionsBuilder.from_dataframe(df_pivotado.drop(columns=["EstiloLinha"]))
+
+            # 📎 Renomeia colunas com média local no título
+            medias_cidade = df_final_av7.groupby("Cidade")["prod_sc_ha"].mean().round(1).to_dict()
+            novos_nomes_colunas = {
+                cidade: f"{cidade} ({media} sc/ha)"
+                for cidade, media in medias_cidade.items()
+            }
+            df_pivotado.rename(columns=novos_nomes_colunas, inplace=True)
+
+            # 🔧 Configurações da tabela AgGrid
+            gb = GridOptionsBuilder.from_dataframe(df_pivotado)
             for col in df_pivotado.select_dtypes(include=["float"]).columns:
                 gb.configure_column(col, type=["numericColumn"], valueFormatter="x.toFixed(1)")
             gb.configure_default_column(cellStyle={'fontSize': '14px'})
@@ -311,15 +321,13 @@ if "merged_dataframes" in st.session_state:
                         "font-size": "15px",
                         "color": "black"
                     }
-                },
-                getRowStyle=row_style,
-                allow_unsafe_jscode=True
+                }
             )
 
-            # Exportação da Tabela Pivotada
+            # 📤 Exportação da Tabela Pivotada
             output_pivot = io.BytesIO()
             with pd.ExcelWriter(output_pivot, engine='xlsxwriter') as writer:
-                df_pivotado.drop(columns=["EstiloLinha"]).to_excel(writer, index=False, sheet_name="faixa_pivotada")
+                df_pivotado.to_excel(writer, index=False, sheet_name="faixa_pivotada")
 
             st.download_button(
                 label="📥 Baixar Tabela Pivotada",
@@ -327,6 +335,7 @@ if "merged_dataframes" in st.session_state:
                 file_name="tabela_pivotada.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
 
 
 
