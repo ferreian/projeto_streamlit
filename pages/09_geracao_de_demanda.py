@@ -122,7 +122,7 @@ else:
 
 # Lista para uso interno
 colunas_visiveis = [
-    "macro", "rec","UF","nome_estado", "regiao","Cultivar", "GM","Plantio", "Colheita",
+    "macro", "rec","UF","nome_estado","Cidade", "regiao","Cultivar", "GM","Plantio", "Colheita",
     "Pop Final plts/ha","Umidade",
     "prod_sc_ha_corr",   
 ]
