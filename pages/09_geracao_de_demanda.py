@@ -124,7 +124,7 @@ else:
 colunas_visiveis = [
     "macro", "rec","UF","nome_estado","Cidade", "regiao","Cultivar", "GM","Plantio", "Colheita",
     "Pop Final plts/ha","Umidade",
-    "prod_sc_ha_corr",   
+    "prod_kg_ha_corr", "prod_sc_ha_corr",   
 ]
 
 #colunas_visiveis = [
@@ -150,7 +150,7 @@ rotulos_renomear = {
     "Area": "Área",
     "Umidade": "Umidade",
     "prod_kg_ha": "Produtividade kg/ha",
-    "prod_kg_ha_corr": "Produtividade kg/ha Corr.",
+    "prod_kg_ha_corr": "Prod kg/ha",
     "prod_sc_ha_corr": "Prod sc/ha ",
     "altitude": "Altitude",
     "latitude": "Latitude",
@@ -211,7 +211,7 @@ with col_tabela:
     )
 
   
-    ...
+
 
     # Botão de exportação para Excel (após a tabela)
     excel_data = converter_para_excel(df_exibicao)
@@ -221,9 +221,71 @@ with col_tabela:
         file_name="dados_filtrados.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+    
+    
+   # RESUMO AGRUPADO POR CULTIVAR
+    st.markdown("### 📊 Resumo por Cultivar")
 
-    #
-    ...
+    colunas_resumo = ['Cultivar', 'Umidade', 'prod_kg_ha', 'prod_sc_ha_corr', 'Pop Final plts/ha']
+    colunas_presentes = [col for col in colunas_resumo if col in df_filtrado.columns]
+
+    if all(col in df_filtrado.columns for col in colunas_resumo):
+        df_resumo = (
+            df_filtrado[colunas_resumo]
+            .groupby('Cultivar', as_index=False)
+            .mean(numeric_only=True)
+            .round(2)
+            .rename(columns={
+                "prod_kg_ha": "Prod kg/ha@13%",
+                "prod_sc_ha_corr": "Prod sc/ha@13%"
+            })
+        )
+
+        # AgGrid para o resumo
+        gb_resumo = GridOptionsBuilder.from_dataframe(df_resumo)
+        gb_resumo.configure_default_column(
+            enableRowGroup=True,
+            enablePivot=True,
+            enableValue=True,
+            sortable=True,
+            filter=True,
+            editable=False,
+            resizable=True
+        )
+        gb_resumo.configure_grid_options(domLayout='normal')
+        grid_options_resumo = gb_resumo.build()
+
+        AgGrid(
+            df_resumo,
+            gridOptions=grid_options_resumo,
+            enable_enterprise_modules=True,
+            fit_columns_on_grid_load=True,
+            height=400,
+            custom_css={
+                ".ag-header-cell-text": {
+                    "font-weight": "bold",
+                    "color": "black"
+                }
+            },
+            allow_unsafe_jscode=True,
+            update_mode="SELECTION_CHANGED",
+            theme="streamlit"
+        )
+
+        # Exportar resumo para Excel
+        resumo_excel = converter_para_excel(df_resumo)
+        st.download_button(
+            label="📥 Exportar Resumo por Cultivar",
+            data=resumo_excel,
+            file_name="resumo_por_cultivar.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.warning("⚠️ Nem todas as colunas necessárias estão disponíveis para gerar o resumo.")
+
+
+
+
    
 
     # 📊 Histograma por faixa de Pop Final
